@@ -121,3 +121,12 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
   - Spring Boot 프로젝트 설정
   - Docker 개발 환경 구성
   - 데이터베이스 스키마 설계 및 구현
+
+- [2025-12-09] 도메인 계층 구현 완료
+  - 도메인 Entity 클래스 8개 구현 (Seller, Order, OrderItem, Payment, Refund, Settlement, SettlementItem, SettlementJobExecution)
+  - Spring Data JPA Repository 인터페이스 8개 구현
+  - QueryDSL Q클래스 자동 생성
+  - Jakarta Persistence API 마이그레이션 (Spring Boot 3.x)
+  - 테스트 환경 개선 (H2 → MySQL)
+  - 복잡한 비즈니스 조회 로직 JPQL로 구현
+  - 멱등성 보장을 위한 Pessimistic Lock 적용

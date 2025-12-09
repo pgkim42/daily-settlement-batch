@@ -1,6 +1,6 @@
 spring:
   profiles:
-    active: local
+    active: local-dev
 
   datasource:
     url: jdbc:mysql://localhost:3307/settlement?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true
@@ -38,6 +38,24 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local-dev
+
+  jpa:
+    hibernate:
+      ddl-auto: update  # Entity 기반으로 자동 생성/업데이트
+    show-sql: true
+
+  flyway:
+    enabled: false  # Flyway 비활성화
+
+  h2:
+    console:
+      enabled: false  # H2 콘솔 비활성화
 
 ---
 spring:

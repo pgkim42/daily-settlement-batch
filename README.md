@@ -23,6 +23,19 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
 - **Test**: JUnit 5, Testcontainers, AssertJ
 - **Infrastructure**: Docker, Docker Compose
 
+## 🔄 개발 프로세스
+
+이 프로젝트는 정해진 개발 프로세스를 따릅니다. 새로운 기능 개발 시 반드시 아래 단계를 거쳐야 합니다:
+
+1. **PRD 작성** → 2. **PRD 검토 및 보완** → 3. **설계 계획 작성** → 4. **설계 검토 및 보완** → 5. **구현**
+
+자세한 내용은 [WORKFLOW.md](./WORKFLOW.md)를 참고하세요.
+
+### 현재 진행상황
+- ✅ PRD 작성 완료
+- ✅ 기술 설계 계획 완료
+- ⏳ 구현 진행 중
+
 ## 아키텍처
 
 ```

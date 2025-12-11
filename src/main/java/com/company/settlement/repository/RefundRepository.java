@@ -52,9 +52,9 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
      * @param endDate 종료일시
      * @return 완료된 환불 목록
      */
-    @Query("SELECT r FROM Refund r " +
-           "JOIN r.orderItem oi " +
-           "JOIN oi.order o " +
+    @Query("SELECT DISTINCT r FROM Refund r " +
+           "JOIN FETCH r.orderItem oi " +
+           "JOIN FETCH oi.order o " +
            "WHERE o.seller.id = :sellerId " +
            "AND r.refundedAt BETWEEN :startDate AND :endDate " +
            "AND r.refundStatus = 'COMPLETED'")

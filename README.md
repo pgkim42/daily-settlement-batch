@@ -37,6 +37,7 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
 - ✅ 도메인 Entity 및 Repository 구현 완료
 - ✅ Spring Batch Job 구현 완료
 - ✅ 스케줄러 및 정산 API 구현 완료
+- ✅ 코드 리뷰 기반 리팩터링 완료
 - ⏳ 통합 테스트 코드 작성 예정
 
 ## 아키텍처
@@ -154,3 +155,15 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
   - 예외 처리 및 GlobalExceptionHandler (RFC 7807 ProblemDetail)
   - SettlementRepository Fetch Join 쿼리 6개 추가
   - V2__Insert_test_data.sql 테스트 데이터 (판매자 3명, 주문 18건, 환불 4건)
+
+- [2025-12-12] 코드 리뷰 기반 리팩터링 완료
+  - **Critical 수정**
+    - SettlementRepository 쿼리 필드명 오류 수정 (Entity 필드명과 일치)
+    - RefundRepository Fetch Join 추가 (N+1 문제 해결)
+  - **High 수정**
+    - SellerItemReader → JpaPagingItemReader 변경 (대용량 처리 최적화)
+    - SettlementWriter flush/clear 순서 수정 (LazyInitializationException 방지)
+  - **Medium 수정**
+    - CommissionCalculator 서비스 추출 (수수료 계산 로직 단일 책임)
+    - SettlementProcessor에서 CommissionCalculator 사용하도록 리팩터링
+    - 배치 재시작 정책 개선 (preventRestart 제거, allowStartIfComplete 추가)

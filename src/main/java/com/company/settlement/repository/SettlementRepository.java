@@ -231,11 +231,11 @@ public interface SettlementRepository extends JpaRepository<Settlement, Long> {
      * @return 통계 정보 [총매출액, 총환불액, 총수수료, 총부가세, 총정산액]
      */
     @Query("SELECT " +
-           "COALESCE(SUM(s.totalSalesAmount), 0), " +
-           "COALESCE(SUM(s.totalRefundAmount), 0), " +
+           "COALESCE(SUM(s.grossSalesAmount), 0), " +
+           "COALESCE(SUM(s.refundAmount), 0), " +
            "COALESCE(SUM(s.commissionAmount), 0), " +
-           "COALESCE(SUM(s.vatAmount), 0), " +
-           "COALESCE(SUM(s.settlementAmount), 0) " +
+           "COALESCE(SUM(s.taxAmount), 0), " +
+           "COALESCE(SUM(s.payoutAmount), 0) " +
            "FROM Settlement s " +
            "WHERE s.periodStart >= :periodStart AND s.periodEnd <= :periodEnd")
     Object[] getSettlementAmountStatistics(

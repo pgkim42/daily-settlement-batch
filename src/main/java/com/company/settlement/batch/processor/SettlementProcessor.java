@@ -3,6 +3,7 @@ package com.company.settlement.batch.processor;
 import com.company.settlement.batch.dto.SettlementContext;
 import com.company.settlement.batch.exception.SettlementAlreadyExistsException;
 import com.company.settlement.batch.exception.SettlementProcessingException;
+import com.company.settlement.batch.service.CommissionCalculator;
 import com.company.settlement.domain.entity.*;
 import com.company.settlement.domain.enums.CycleType;
 import com.company.settlement.domain.enums.SettlementStatus;
@@ -18,7 +19,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -39,13 +39,10 @@ import java.util.List;
 @Slf4j
 public class SettlementProcessor implements ItemProcessor<Seller, SettlementContext> {
 
-    private static final BigDecimal TAX_RATE = new BigDecimal("0.10");  // 부가세 10%
-    private static final int DECIMAL_SCALE = 2;
-    private static final RoundingMode ROUNDING_MODE = RoundingMode.HALF_UP;
-
     private final SettlementRepository settlementRepository;
     private final OrderRepository orderRepository;
     private final RefundRepository refundRepository;
+    private final CommissionCalculator commissionCalculator;
 
     @Value("#{jobParameters['targetDate']}")
     private String targetDateString;
@@ -171,42 +168,40 @@ public class SettlementProcessor implements ItemProcessor<Seller, SettlementCont
     private SettlementAmounts calculateAmounts(List<Order> orders, List<Refund> refunds,
                                                 BigDecimal commissionRate) {
         // 총매출액: 주문 항목들의 합계
-        BigDecimal grossSalesAmount = orders.stream()
-            .flatMap(order -> order.getOrderItems().stream())
-            .map(OrderItem::getTotalAmount)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal grossSalesAmount = commissionCalculator.sum(
+            orders.stream()
+                .flatMap(order -> order.getOrderItems().stream())
+                .map(OrderItem::getTotalAmount)
+                .toArray(BigDecimal[]::new)
+        );
 
         // 환불액: 완료된 환불 합계
-        BigDecimal refundAmount = refunds.stream()
-            .map(Refund::getRefundAmount)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal refundAmount = commissionCalculator.sum(
+            refunds.stream()
+                .map(Refund::getRefundAmount)
+                .toArray(BigDecimal[]::new)
+        );
 
         // 순매출액
-        BigDecimal netSalesAmount = grossSalesAmount.subtract(refundAmount);
+        BigDecimal netSalesAmount = commissionCalculator.calculateNetAmount(grossSalesAmount, refundAmount);
 
         // 수수료 계산 (순매출액 기준)
-        BigDecimal commissionAmount = netSalesAmount
-            .multiply(commissionRate)
-            .setScale(DECIMAL_SCALE, ROUNDING_MODE);
+        BigDecimal commissionAmount = commissionCalculator.calculateCommission(netSalesAmount, commissionRate);
 
         // 부가세 계산 (수수료의 10%)
-        BigDecimal taxAmount = commissionAmount
-            .multiply(TAX_RATE)
-            .setScale(DECIMAL_SCALE, ROUNDING_MODE);
+        BigDecimal taxAmount = commissionCalculator.calculateTax(commissionAmount);
 
         // 조정액 (현재는 0, 추후 수동 조정 기능 추가 시 사용)
         BigDecimal adjustmentAmount = BigDecimal.ZERO;
 
-        // 최종 정산액 = 순매출액 - 수수료 - 부가세 + 조정액
-        BigDecimal payoutAmount = netSalesAmount
-            .subtract(commissionAmount)
-            .subtract(taxAmount)
-            .add(adjustmentAmount)
-            .setScale(DECIMAL_SCALE, ROUNDING_MODE);
+        // 최종 정산액 계산
+        BigDecimal payoutAmount = commissionCalculator.calculatePayoutAmount(
+            netSalesAmount, commissionAmount, taxAmount, adjustmentAmount
+        );
 
         return new SettlementAmounts(
-            grossSalesAmount,
-            refundAmount,
+            commissionCalculator.normalize(grossSalesAmount),
+            commissionCalculator.normalize(refundAmount),
             commissionRate,
             commissionAmount,
             taxAmount,
@@ -245,9 +240,9 @@ public class SettlementProcessor implements ItemProcessor<Seller, SettlementCont
         // 판매 항목 생성
         for (Order order : orders) {
             for (OrderItem orderItem : order.getOrderItems()) {
-                BigDecimal itemCommission = orderItem.getTotalAmount()
-                    .multiply(commissionRate)
-                    .setScale(DECIMAL_SCALE, ROUNDING_MODE);
+                BigDecimal itemCommission = commissionCalculator.calculateCommission(
+                    orderItem.getTotalAmount(), commissionRate
+                );
 
                 SettlementItem saleItem = SettlementItem.createSaleItem(
                     orderItem.getId(),
@@ -261,9 +256,9 @@ public class SettlementProcessor implements ItemProcessor<Seller, SettlementCont
 
         // 환불 항목 생성
         for (Refund refund : refunds) {
-            BigDecimal refundCommission = refund.getRefundAmount()
-                .multiply(commissionRate)
-                .setScale(DECIMAL_SCALE, ROUNDING_MODE);
+            BigDecimal refundCommission = commissionCalculator.calculateCommission(
+                refund.getRefundAmount(), commissionRate
+            );
 
             SettlementItem refundItem = SettlementItem.createRefundItem(
                 refund.getId(),

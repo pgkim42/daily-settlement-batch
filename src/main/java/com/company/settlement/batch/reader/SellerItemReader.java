@@ -1,85 +1,50 @@
 package com.company.settlement.batch.reader;
 
 import com.company.settlement.domain.entity.Seller;
-import com.company.settlement.domain.enums.SellerStatus;
-import com.company.settlement.repository.SellerRepository;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
+import jakarta.persistence.EntityManagerFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.configuration.annotation.StepScope;
-import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.database.JpaPagingItemReader;
+import org.springframework.batch.item.database.builder.JpaPagingItemReaderBuilder;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-
-import java.time.LocalDate;
-import java.util.List;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 /**
- * 정산 대상 판매자 조회 Reader
+ * 정산 대상 판매자 조회 Reader 설정
  *
- * @StepScope: Step 실행 시마다 새 인스턴스 생성, Job Parameter 바인딩 가능
+ * JpaPagingItemReader를 사용하여 대용량 판매자 데이터를 페이징 처리합니다.
+ * - 메모리 효율성: 전체 로드 대신 페이지 단위 조회
+ * - 트랜잭션 안정성: 각 페이지가 별도 트랜잭션에서 처리
  */
-@Component
-@StepScope
-@RequiredArgsConstructor
+@Configuration
 @Slf4j
-public class SellerItemReader implements ItemReader<Seller> {
+public class SellerItemReader {
 
-    private final SellerRepository sellerRepository;
-
-    private List<Seller> sellers;
-    private int currentIndex = 0;
-
-    @Value("#{jobParameters['targetDate']}")
-    private String targetDateString;
-
-    private LocalDate targetDate;
+    private static final int PAGE_SIZE = 100;
 
     /**
-     * 초기화: 정산 대상 판매자 목록 조회
-     * @StepScope로 인해 Step 시작 시 한 번만 실행됨
-     */
-    @PostConstruct
-    public void init() {
-        this.targetDate = LocalDate.parse(targetDateString);
-        this.sellers = sellerRepository.findSettlementEligibleSellers(SellerStatus.ACTIVE);
-        this.currentIndex = 0;
-
-        log.info("[SellerItemReader] 정산 대상 판매자 수: {}, 정산 대상일: {}",
-                 sellers.size(), targetDate);
-    }
-
-    /**
-     * 판매자 한 명씩 반환
+     * 활성 판매자 조회 Reader
      *
-     * @return 다음 판매자, 없으면 null (Step 종료)
+     * @StepScope: Job Parameter 바인딩 및 Step별 인스턴스 생성
+     *
+     * @param entityManagerFactory JPA EntityManagerFactory
+     * @param targetDateString 정산 대상 날짜 (Job Parameter)
+     * @return JpaPagingItemReader<Seller>
      */
-    @Override
-    public Seller read() {
-        if (currentIndex >= sellers.size()) {
-            return null;
-        }
+    @Bean
+    @StepScope
+    public JpaPagingItemReader<Seller> sellerPagingItemReader(
+            EntityManagerFactory entityManagerFactory,
+            @Value("#{jobParameters['targetDate']}") String targetDateString) {
 
-        Seller seller = sellers.get(currentIndex);
-        currentIndex++;
+        log.info("[SellerItemReader] Initializing reader for targetDate: {}", targetDateString);
 
-        log.debug("[SellerItemReader] Reading seller: {} ({})",
-                  seller.getSellerName(), seller.getSellerCode());
-
-        return seller;
-    }
-
-    /**
-     * 정산 대상 날짜 반환
-     */
-    public LocalDate getTargetDate() {
-        return this.targetDate;
-    }
-
-    /**
-     * 전체 판매자 수 반환 (Listener에서 사용)
-     */
-    public int getTotalSellerCount() {
-        return sellers != null ? sellers.size() : 0;
+        return new JpaPagingItemReaderBuilder<Seller>()
+            .name("sellerPagingItemReader")
+            .entityManagerFactory(entityManagerFactory)
+            .queryString("SELECT s FROM Seller s WHERE s.status = 'ACTIVE' ORDER BY s.id")
+            .pageSize(PAGE_SIZE)
+            .build();
     }
 }

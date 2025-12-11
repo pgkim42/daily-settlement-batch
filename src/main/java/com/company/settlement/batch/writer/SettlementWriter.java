@@ -60,21 +60,23 @@ public class SettlementWriter implements ItemWriter<SettlementContext> {
         // Batch Insert (CascadeType.ALL로 SettlementItem도 함께 저장)
         List<Settlement> savedSettlements = settlementRepository.saveAll(settlementsToSave);
 
-        // JPA 배치 최적화를 위한 flush & clear
+        // flush로 DB에 즉시 반영 (ID 생성 보장)
         entityManager.flush();
-        entityManager.clear();  // 영속성 컨텍스트 정리 (메모리 최적화)
 
         log.info("[SettlementWriter] Successfully saved {} settlements", savedSettlements.size());
 
-        // 저장 결과 로깅
+        // 저장 결과 로깅 (clear 전에 수행하여 LazyInitializationException 방지)
         for (Settlement saved : savedSettlements) {
-            log.info("[SettlementWriter] Saved: id={}, seller={}, period={} ~ {}, grossSales={}, payout={}",
-                     saved.getId(),
-                     saved.getSeller().getSellerCode(),
-                     saved.getPeriodStart(),
-                     saved.getPeriodEnd(),
-                     saved.getGrossSalesAmount(),
-                     saved.getPayoutAmount());
+            log.debug("[SettlementWriter] Saved: id={}, seller={}, period={} ~ {}, grossSales={}, payout={}",
+                      saved.getId(),
+                      saved.getSeller().getSellerCode(),
+                      saved.getPeriodStart(),
+                      saved.getPeriodEnd(),
+                      saved.getGrossSalesAmount(),
+                      saved.getPayoutAmount());
         }
+
+        // 영속성 컨텍스트 정리 (메모리 최적화) - 로깅 후에 수행
+        entityManager.clear();
     }
 }

@@ -4,7 +4,7 @@
 
 **프로젝트**: 마켓플레이스 판매자 일일 정산 시스템
 **마지막 업데이트**: 2025-12-12
-**현재 단계**: 스케줄러, API, 테스트 데이터 구현 완료
+**현재 단계**: 코드 리뷰 기반 리팩터링 완료
 
 ## 완료된 작업 ✅
 
@@ -61,6 +61,28 @@
   - `V2__Insert_test_data.sql` Flyway 마이그레이션
   - 판매자 3명, 주문 18건, 환불 4건
 
+### Phase 3.5: 코드 리뷰 및 리팩터링
+- [x] 코드 리뷰 수행 (2025-12-12)
+  - 시니어 Spring Boot 개발자 관점에서 전체 코드 검토
+  - 평가 점수: 8.5/10
+- [x] Critical 이슈 수정 (2025-12-12)
+  - SettlementRepository 쿼리 필드명 오류 수정 (grossSalesAmount, refundAmount, taxAmount, payoutAmount)
+  - RefundRepository에 Fetch Join 추가 (N+1 문제 해결)
+- [x] High 이슈 수정 (2025-12-12)
+  - SellerItemReader → JpaPagingItemReader 변경 (대용량 처리 최적화)
+  - SettlementWriter flush/clear 순서 수정 (LazyInitializationException 방지)
+- [x] Medium 이슈 수정 (2025-12-12)
+  - CommissionCalculator 서비스 추출 (`batch/service/CommissionCalculator.java`)
+    - 수수료/부가세/정산액 계산 로직 단일 책임 원칙 적용
+    - BigDecimal HALF_UP 반올림 일관성 보장
+  - SettlementProcessor 리팩터링
+    - CommissionCalculator 주입 및 계산 로직 위임
+    - 중복 상수 제거 (TAX_RATE, DECIMAL_SCALE, ROUNDING_MODE)
+  - 배치 재시작 정책 개선
+    - preventRestart() 제거 (실패한 Job 재시작 허용)
+    - allowStartIfComplete(false) 추가 (완료된 Step 재실행 방지)
+    - 멱등성은 SettlementProcessor.checkIdempotency()에서 보장
+
 ## 다음 할 일 📋
 
 ### Phase 4: 통합 테스트 작성 (우선순위 높음)
@@ -92,6 +114,9 @@
 ### 금액 계산
 - **절대 double 사용 금지**: 항상 BigDecimal 사용
 - **RoundingMode**: 반드시 HALF_UP 사용 (은행 기준)
+- **CommissionCalculator**: 모든 금액 계산은 이 서비스를 통해 수행
+  - calculateCommission(), calculateTax(), calculatePayoutAmount()
+  - normalize(), sum() 등 유틸리티 메서드 제공
 - **단위 테스트**: 모든 금액 계산 로직은 100% 커버리지 목표
 
 ### 멱등성 보장

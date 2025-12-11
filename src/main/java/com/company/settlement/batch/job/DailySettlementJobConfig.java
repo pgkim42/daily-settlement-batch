@@ -6,7 +6,6 @@ import com.company.settlement.batch.exception.SettlementProcessingException;
 import com.company.settlement.batch.listener.JobExecutionListener;
 import com.company.settlement.batch.listener.SettlementItemSkipListener;
 import com.company.settlement.batch.processor.SettlementProcessor;
-import com.company.settlement.batch.reader.SellerItemReader;
 import com.company.settlement.batch.writer.SettlementWriter;
 import com.company.settlement.domain.entity.Seller;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +16,7 @@ import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.item.database.JpaPagingItemReader;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -41,7 +41,7 @@ public class DailySettlementJobConfig {
 
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
-    private final SellerItemReader sellerItemReader;
+    private final JpaPagingItemReader<Seller> sellerPagingItemReader;
     private final SettlementProcessor settlementProcessor;
     private final SettlementWriter settlementWriter;
     private final JobExecutionListener jobExecutionListener;
@@ -52,12 +52,18 @@ public class DailySettlementJobConfig {
      *
      * Job Parameters:
      * - targetDate: 정산 대상 날짜 (format: yyyy-MM-dd)
+     *
+     * 재시작 정책:
+     * - RunIdIncrementer: 매 실행마다 새로운 run.id 부여 (중복 실행 방지)
+     * - 재시작 허용: 실패한 Job 재시작 가능 (동일 파라미터로 FAILED 상태에서 재실행)
+     * - 멱등성: SettlementProcessor에서 중복 정산 체크로 데이터 무결성 보장
      */
     @Bean
     public Job dailySettlementJob() {
         return new JobBuilder(JOB_NAME, jobRepository)
             .incrementer(new RunIdIncrementer())
-            .preventRestart()  // 동일 파라미터로 재시작 방지
+            // preventRestart() 제거: 실패한 Job 재시작 허용
+            // 멱등성은 SettlementProcessor.checkIdempotency()에서 보장
             .listener(jobExecutionListener)
             .start(dailySettlementStep())
             .build();
@@ -74,12 +80,16 @@ public class DailySettlementJobConfig {
      * Fault Tolerant:
      * - SettlementAlreadyExistsException: Skip (이미 정산 존재)
      * - SettlementProcessingException: Skip (처리 오류)
+     *
+     * 재시작 정책:
+     * - allowStartIfComplete(false): 완료된 Step 재실행 방지
+     * - 멱등성 보장으로 재시작 시에도 안전
      */
     @Bean
     public Step dailySettlementStep() {
         return new StepBuilder(STEP_NAME, jobRepository)
             .<Seller, SettlementContext>chunk(CHUNK_SIZE, transactionManager)
-            .reader(sellerItemReader)
+            .reader(sellerPagingItemReader)
             .processor(settlementProcessor)
             .writer(settlementWriter)
             .faultTolerant()
@@ -87,6 +97,7 @@ public class DailySettlementJobConfig {
             .skip(SettlementAlreadyExistsException.class)  // 이미 정산 존재 시 Skip
             .skip(SettlementProcessingException.class)     // 정산 처리 실패 시 Skip
             .listener(skipListener)
+            .allowStartIfComplete(false)  // 완료된 Step 재실행 방지
             .build();
     }
 }

@@ -99,6 +99,13 @@ spring:
     job:
       enabled: false
 
+# ==============================================
+# 스케줄러 설정
+# ==============================================
+settlement:
+  scheduler:
+    enabled: false  # 기본값: 비활성화 (프로덕션에서 true로 설정)
+
 logging:
   level:
     com.company.settlement: DEBUG

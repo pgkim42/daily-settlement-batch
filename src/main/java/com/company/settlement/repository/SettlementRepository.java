@@ -165,4 +165,95 @@ public interface SettlementRepository extends JpaRepository<Settlement, Long> {
            "ORDER BY s.cancelledAt DESC " +
            "LIMIT :limit")
     List<Settlement> findCancelledSettlements(@Param("limit") int limit);
+
+    // ========== API용 쿼리 메서드 ==========
+
+    /**
+     * 정산 상세 조회 (Seller Fetch Join)
+     * @param settlementId 정산 ID
+     * @return 정산 정보 (Seller 포함)
+     */
+    @Query("SELECT s FROM Settlement s " +
+           "JOIN FETCH s.seller " +
+           "WHERE s.id = :settlementId")
+    Optional<Settlement> findByIdWithSeller(@Param("settlementId") Long settlementId);
+
+    /**
+     * 정산 상세 조회 (Seller + Items Fetch Join)
+     * @param settlementId 정산 ID
+     * @return 정산 정보 (Seller, Items 포함)
+     */
+    @Query("SELECT DISTINCT s FROM Settlement s " +
+           "JOIN FETCH s.seller " +
+           "LEFT JOIN FETCH s.settlementItems " +
+           "WHERE s.id = :settlementId")
+    Optional<Settlement> findByIdWithSellerAndItems(@Param("settlementId") Long settlementId);
+
+    /**
+     * 판매자별 정산 목록 조회 (Seller Fetch Join)
+     * @param sellerId 판매자 ID
+     * @param pageable 페이징 정보
+     * @return 정산 목록
+     */
+    @Query(value = "SELECT s FROM Settlement s JOIN FETCH s.seller WHERE s.seller.id = :sellerId",
+           countQuery = "SELECT COUNT(s) FROM Settlement s WHERE s.seller.id = :sellerId")
+    Page<Settlement> findBySellerIdWithSeller(@Param("sellerId") Long sellerId, Pageable pageable);
+
+    /**
+     * 전체 정산 목록 조회 (관리자용, Seller Fetch Join)
+     * @param pageable 페이징 정보
+     * @return 정산 목록
+     */
+    @Query(value = "SELECT s FROM Settlement s JOIN FETCH s.seller",
+           countQuery = "SELECT COUNT(s) FROM Settlement s")
+    Page<Settlement> findAllWithSeller(Pageable pageable);
+
+    /**
+     * 기간별 정산 목록 조회 (관리자용, Seller Fetch Join)
+     * @param periodStart 기간 시작일
+     * @param periodEnd 기간 종료일
+     * @param pageable 페이징 정보
+     * @return 정산 목록
+     */
+    @Query(value = "SELECT s FROM Settlement s JOIN FETCH s.seller " +
+           "WHERE s.periodStart >= :periodStart AND s.periodEnd <= :periodEnd",
+           countQuery = "SELECT COUNT(s) FROM Settlement s " +
+           "WHERE s.periodStart >= :periodStart AND s.periodEnd <= :periodEnd")
+    Page<Settlement> findByPeriodWithSeller(
+            @Param("periodStart") LocalDate periodStart,
+            @Param("periodEnd") LocalDate periodEnd,
+            Pageable pageable);
+
+    /**
+     * 특정 기간의 정산 통계 (금액 기준)
+     * @param periodStart 기간 시작일
+     * @param periodEnd 기간 종료일
+     * @return 통계 정보 [총매출액, 총환불액, 총수수료, 총부가세, 총정산액]
+     */
+    @Query("SELECT " +
+           "COALESCE(SUM(s.totalSalesAmount), 0), " +
+           "COALESCE(SUM(s.totalRefundAmount), 0), " +
+           "COALESCE(SUM(s.commissionAmount), 0), " +
+           "COALESCE(SUM(s.vatAmount), 0), " +
+           "COALESCE(SUM(s.settlementAmount), 0) " +
+           "FROM Settlement s " +
+           "WHERE s.periodStart >= :periodStart AND s.periodEnd <= :periodEnd")
+    Object[] getSettlementAmountStatistics(
+            @Param("periodStart") LocalDate periodStart,
+            @Param("periodEnd") LocalDate periodEnd);
+
+    /**
+     * 특정 기간 및 상태별 정산 건수 조회
+     * @param periodStart 기간 시작일
+     * @param periodEnd 기간 종료일
+     * @param status 정산 상태
+     * @return 건수
+     */
+    @Query("SELECT COUNT(s) FROM Settlement s " +
+           "WHERE s.periodStart >= :periodStart AND s.periodEnd <= :periodEnd " +
+           "AND s.status = :status")
+    long countByPeriodAndStatus(
+            @Param("periodStart") LocalDate periodStart,
+            @Param("periodEnd") LocalDate periodEnd,
+            @Param("status") SettlementStatus status);
 }

@@ -3,8 +3,8 @@
 ## 프로젝트 현황
 
 **프로젝트**: 마켓플레이스 판매자 일일 정산 시스템
-**마지막 업데이트**: 2025-12-09
-**현재 단계**: Repository 인터페이스 구현 완료
+**마지막 업데이트**: 2025-12-11
+**현재 단계**: Spring Batch Job 구현 완료
 
 ## 완료된 작업 ✅
 
@@ -22,65 +22,35 @@
   - 멱등성 보장을 위한 쿼리 추가
   - BigDecimal 기반 금액 집계 쿼리
 
+### Phase 2: 비즈니스 로직 구현
+- [x] Spring Batch Job 구현 (2025-12-11)
+  - 패키지: `src/main/java/com/company/settlement/batch/`
+  - **BatchConfig**: 트랜잭션 매니저 설정
+  - **DailySettlementJobConfig**: Job/Step 정의 (chunk=100)
+  - **SellerItemReader**: @StepScope 기반 활성 판매자 조회
+  - **SettlementProcessor**: 정산 계산 핵심 로직
+    - 멱등성 체크 (동일 기간 중복 정산 방지)
+    - 수수료/부가세/정산액 계산 (BigDecimal, HALF_UP)
+  - **SettlementWriter**: Settlement + SettlementItem 배치 저장
+  - **JobExecutionListener**: 실행 이력 관리
+  - **SettlementItemSkipListener**: Skip 처리 로깅
+  - **예외 클래스**: SettlementAlreadyExistsException, SettlementProcessingException
+  - **DTO**: SettlementContext (Processor → Writer 전달용)
+- [x] OrderRepository Fetch Join 쿼리 추가 (2025-12-11)
+  - N+1 문제 해결을 위한 `findSettlementTargetOrdersWithItems()` 메서드
+
 ## 다음 할 일 📋
 
-### Phase 2: 비즈니스 로직 구현 (우선순위 높음)
+### Phase 3: API, 테스트 및 스케줄링 (우선순위 높음)
 
-#### 1. Spring Batch Job 구현 (일일 정산 배치)
-- [ ] **Batch 설정 클래스 구현**
-  - `src/main/java/com/company/settlement/batch/config/BatchConfig.java`
-  - JobRegistry, PlatformTransactionManager 설정
+#### 1. 스케줄러 구현
+- [ ] **SettlementScheduler 구현**
+  - `src/main/java/com/company/settlement/batch/scheduler/SettlementScheduler.java`
+  - @Scheduled를 이용한 매일 02:00 실행
+  - JobParameter 동적 생성 (전일 날짜)
+  - `settlement.scheduler.enabled` 설정으로 활성화 제어
 
-- [ ] **DailySettlementJobConfig 구현**
-  - `src/main/java/com/company/settlement/batch/job/DailySettlementJobConfig.java`
-  - Job Parameter: targetDate, cycleType
-  - Step 정의 (Reader, Processor, Writer)
-
-- [ ] **SellerReader 구현**
-  - JpaPagingItemReader 사용
-  - 정산 대상 판매자 조회
-
-- [ ] **SettlementProcessor 구현**
-  - 핵심 비즈니스 로직
-  - 판매자별 정산 금액 계산
-  - 멱등성 체크
-
-- [ ] **SettlementWriter 구현**
-  - JPA 배치 저장
-  - Settlement 및 SettlementItem 저장
-
-- [ ] **JobListener 구현**
-  - Job 시작/종료 로깅
-  - 실행 시간 기록
-  - 실패 시 알림
-
-#### 2. 정산 계산 로직 구현
-- [ ] **SettlementCalculationService 구현**
-  - 위치: `src/main/java/com/company/settlement/service/SettlementCalculationService.java`
-
-  - [ ] 수수료 계산 로직
-    - 판매자별 수수료율 적용
-    - BigDecimal 정밀 계산
-    - RoundingMode.HALF_UP 적용
-
-  - [ ] 부가세 계산 로직
-    - 부가세율 10% 고정 또는 설정 가능하게
-
-  - [ ] 환불 반영 로직
-    - 부분 환불 처리
-    - 환불 발생 시점 기준 정산 조정
-
-  - [ ] 총 지급액 계산
-    - `payout_amount = gross_sales - refund - commission - tax + adjustment`
-
-- [ ] **BigDecimalUtil 유틸리티 클래스 구현**
-  - 위치: `src/main/java/com/company/settlement/util/BigDecimalUtil.java`
-  - 금액 계산 헬퍼 메소드
-  - 반올림, 절사 등 공통 기능
-
-### Phase 3: API 및 테스트 (우선순위 중간)
-
-#### 3. 정산 결과 조회 API 구현
+#### 2. 정산 결과 조회 API 구현
 - [ ] **SettlementController (판매자용)**
   - `src/main/java/com/company/settlement/controller/SettlementController.java`
   - 내 정산 내역 조회
@@ -111,11 +81,7 @@
   - JobLauncherTestUtils 사용
   - 통합 시나리오 테스트
 
-### Phase 4: 스케줄링 및 모니터링 (우선순위 낮음)
-
-- [ ] **스케줄러 설정**
-  - @Scheduled를 이용한 매일 02:00 실행
-  - JobParameter 동적 생성
+### Phase 4: 모니터링 (우선순위 낮음)
 
 - [ ] **Actuator 설정**
   - Health check
@@ -159,8 +125,13 @@
    ```
 
 3. 다음 작업 시작점
-   - Spring Batch 설정부터 시작
-   - `src/main/java/com/company/settlement/batch/config/` 패키지 생성
+   - 스케줄러 구현 또는 테스트 코드 작성
+   - `src/main/java/com/company/settlement/batch/scheduler/` 패키지 생성
+
+4. 배치 Job 실행 테스트
+   ```bash
+   ./gradlew bootRun --args='--spring.batch.job.name=dailySettlementJob targetDate=2024-01-15'
+   ```
 
 ## 참고 자료 📚
 

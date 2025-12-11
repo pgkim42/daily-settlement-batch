@@ -34,7 +34,9 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
 ### 현재 진행상황
 - ✅ PRD 작성 완료
 - ✅ 기술 설계 계획 완료
-- ⏳ 구현 진행 중
+- ✅ 도메인 Entity 및 Repository 구현 완료
+- ✅ Spring Batch Job 구현 완료
+- ⏳ 스케줄러 및 테스트 코드 작성 예정
 
 ## 아키텍처
 
@@ -130,3 +132,14 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
   - 테스트 환경 개선 (H2 → MySQL)
   - 복잡한 비즈니스 조회 로직 JPQL로 구현
   - 멱등성 보장을 위한 Pessimistic Lock 적용
+
+- [2025-12-11] Spring Batch Job 구현 완료
+  - Spring Batch 5.x 기반 일일 정산 배치 시스템 구현
+  - BatchConfig, DailySettlementJobConfig (Job/Step 정의)
+  - SellerItemReader (@StepScope 기반 판매자 조회)
+  - SettlementProcessor (정산 계산 핵심 로직)
+    - 멱등성 체크, 수수료/부가세/정산액 계산
+  - SettlementWriter (배치 저장)
+  - JobExecutionListener, SettlementItemSkipListener
+  - Fault Tolerant 설정 (skipLimit으로 판매자별 독립 처리)
+  - OrderRepository에 Fetch Join 쿼리 추가 (N+1 해결)

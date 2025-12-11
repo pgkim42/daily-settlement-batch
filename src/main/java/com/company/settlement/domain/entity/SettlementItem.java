@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Comment;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * 정산 항목 Entity
@@ -144,7 +145,7 @@ public class SettlementItem extends BaseEntity {
         if (this.grossAmount != null && this.commissionRate != null) {
             this.commissionAmount = this.grossAmount
                 .multiply(this.commissionRate)
-                .setScale(2, BigDecimal.ROUND_HALF_UP);
+                .setScale(2, RoundingMode.HALF_UP);
             updateNetAmount();
         }
     }

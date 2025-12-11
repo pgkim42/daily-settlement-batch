@@ -78,6 +78,24 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("endDate") LocalDateTime endDate);
 
     /**
+     * 판매자별 특정 기간의 정산 대상 주문 목록 조회 (OrderItem Fetch Join)
+     * N+1 문제 해결을 위한 Fetch Join 버전
+     * @param sellerId 판매자 ID
+     * @param startDate 시작일시
+     * @param endDate 종료일시
+     * @return 주문 목록 (OrderItems 포함)
+     */
+    @Query("SELECT DISTINCT o FROM Order o " +
+           "JOIN FETCH o.orderItems " +
+           "WHERE o.seller.id = :sellerId " +
+           "AND o.orderDate BETWEEN :startDate AND :endDate " +
+           "AND o.orderStatus IN ('CONFIRMED', 'SHIPPED', 'DELIVERED')")
+    List<Order> findSettlementTargetOrdersWithItems(
+            @Param("sellerId") Long sellerId,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    /**
      * 주문 상태별 주문 수 조회
      * @param orderStatus 주문 상태
      * @return 주문 수

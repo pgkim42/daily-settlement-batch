@@ -3,8 +3,8 @@
 ## 프로젝트 현황
 
 **프로젝트**: 마켓플레이스 판매자 일일 정산 시스템
-**마지막 업데이트**: 2025-12-11
-**현재 단계**: Spring Batch Job 구현 완료
+**마지막 업데이트**: 2025-12-12
+**현재 단계**: 스케줄러, API, 테스트 데이터 구현 완료
 
 ## 완료된 작업 ✅
 
@@ -39,35 +39,31 @@
 - [x] OrderRepository Fetch Join 쿼리 추가 (2025-12-11)
   - N+1 문제 해결을 위한 `findSettlementTargetOrdersWithItems()` 메서드
 
+### Phase 3: API 및 스케줄링
+- [x] SettlementScheduler 구현 (2025-12-12)
+  - `src/main/java/com/company/settlement/batch/scheduler/SettlementScheduler.java`
+  - @Scheduled를 이용한 매일 02:00 KST 실행
+  - @ConditionalOnProperty로 활성화 제어
+  - `settlement.scheduler.enabled` 설정 추가
+- [x] 정산 결과 조회 API 구현 (2025-12-12)
+  - **SettlementController**: 판매자용 정산 조회 API
+  - **AdminSettlementController**: 관리자용 정산/통계/배치 트리거 API
+  - **Service 계층**: 인터페이스와 구현체 분리 (3쌍)
+  - **DTO**: record 패턴 활용 (Request 1개, Response 7개)
+- [x] 예외 처리 및 전역 핸들러 구현 (2025-12-12)
+  - SettlementNotFoundException, SettlementAccessDeniedException
+  - BatchAlreadyRunningException, GlobalExceptionHandler
+  - RFC 7807 ProblemDetail 응답 형식
+- [x] SettlementRepository 확장 (2025-12-12)
+  - Fetch Join 쿼리 6개 추가 (N+1 문제 해결)
+  - 통계 집계 쿼리 추가
+- [x] 테스트 데이터 생성 (2025-12-12)
+  - `V2__Insert_test_data.sql` Flyway 마이그레이션
+  - 판매자 3명, 주문 18건, 환불 4건
+
 ## 다음 할 일 📋
 
-### Phase 3: API, 테스트 및 스케줄링 (우선순위 높음)
-
-#### 1. 스케줄러 구현
-- [ ] **SettlementScheduler 구현**
-  - `src/main/java/com/company/settlement/batch/scheduler/SettlementScheduler.java`
-  - @Scheduled를 이용한 매일 02:00 실행
-  - JobParameter 동적 생성 (전일 날짜)
-  - `settlement.scheduler.enabled` 설정으로 활성화 제어
-
-#### 2. 정산 결과 조회 API 구현
-- [ ] **SettlementController (판매자용)**
-  - `src/main/java/com/company/settlement/controller/SettlementController.java`
-  - 내 정산 내역 조회
-  - 정산 상세 내역 조회
-
-- [ ] **AdminSettlementController (관리자용)**
-  - `src/main/java/com/company/settlement/controller/AdminSettlementController.java`
-  - 전체 판매자 정산 현황
-  - 배치 실행 트리거
-  - 수동 조정 기능
-
-- [ ] **DTO 클래스 구현**
-  - `src/main/java/com/company/settlement/domain/dto/`
-  - SettlementResponse, SettlementDetailResponse 등
-  - Pageable 처리
-
-#### 4. 통합 테스트 작성
+### Phase 4: 통합 테스트 작성 (우선순위 높음)
 - [ ] **Repository 테스트**
   - `src/test/java/com/company/settlement/repository/`
   - Testcontainers 사용
@@ -81,7 +77,7 @@
   - JobLauncherTestUtils 사용
   - 통합 시나리오 테스트
 
-### Phase 4: 모니터링 (우선순위 낮음)
+### Phase 5: 모니터링 (우선순위 낮음)
 
 - [ ] **Actuator 설정**
   - Health check
@@ -125,12 +121,21 @@
    ```
 
 3. 다음 작업 시작점
-   - 스케줄러 구현 또는 테스트 코드 작성
-   - `src/main/java/com/company/settlement/batch/scheduler/` 패키지 생성
+   - 통합 테스트 코드 작성
+   - `src/test/java/com/company/settlement/` 패키지
 
 4. 배치 Job 실행 테스트
    ```bash
    ./gradlew bootRun --args='--spring.batch.job.name=dailySettlementJob targetDate=2024-01-15'
+   ```
+
+5. API 테스트 (서버 실행 후)
+   ```bash
+   # 판매자 정산 목록 조회
+   curl -H "X-Seller-Id: 1" http://localhost:8080/api/settlements
+
+   # 관리자 통계 조회
+   curl "http://localhost:8080/api/admin/settlements/statistics?start=2024-01-01&end=2024-01-31"
    ```
 
 ## 참고 자료 📚

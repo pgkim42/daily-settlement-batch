@@ -36,7 +36,8 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
 - ✅ 기술 설계 계획 완료
 - ✅ 도메인 Entity 및 Repository 구현 완료
 - ✅ Spring Batch Job 구현 완료
-- ⏳ 스케줄러 및 테스트 코드 작성 예정
+- ✅ 스케줄러 및 정산 API 구현 완료
+- ⏳ 통합 테스트 코드 작성 예정
 
 ## 아키텍처
 
@@ -143,3 +144,13 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
   - JobExecutionListener, SettlementItemSkipListener
   - Fault Tolerant 설정 (skipLimit으로 판매자별 독립 처리)
   - OrderRepository에 Fetch Join 쿼리 추가 (N+1 해결)
+
+- [2025-12-12] 스케줄러, API, 테스트 데이터 구현 완료
+  - SettlementScheduler: 매일 02:00 KST 자동 실행 (@ConditionalOnProperty)
+  - 정산 조회 API 구현
+    - SettlementController (판매자용), AdminSettlementController (관리자용)
+    - Service 계층 인터페이스/구현체 분리 (3쌍)
+    - DTO record 패턴 활용 (Request 1개, Response 7개)
+  - 예외 처리 및 GlobalExceptionHandler (RFC 7807 ProblemDetail)
+  - SettlementRepository Fetch Join 쿼리 6개 추가
+  - V2__Insert_test_data.sql 테스트 데이터 (판매자 3명, 주문 18건, 환불 4건)

@@ -5,32 +5,37 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Repository 통합 테스트 추상 클래스
  * 
  * Testcontainers MySQL 기반 테스트 환경 제공
+ * 
+ * Singleton Container 패턴 적용:
+ * - 모든 테스트 클래스가 단일 MySQL 컨테이너를 공유
+ * - JVM 종료 시 Ryuk이 자동으로 컨테이너 정리
  */
 @DataJpaTest
-@Testcontainers
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 public abstract class AbstractRepositoryTest {
 
-    @Container
-    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("settlement_test")
-            .withUsername("test")
-            .withPassword("test")
-            .withUrlParam("useSSL", "false")
-            .withUrlParam("allowPublicKeyRetrieval", "true")
-            .withUrlParam("serverTimezone", "Asia/Seoul")
-            .withCommand(
-                "--character-set-server=utf8mb4",
-                "--collation-server=utf8mb4_unicode_ci",
-                "--skip-ssl"
-            );
+    static final MySQLContainer<?> mysql;
+
+    static {
+        mysql = new MySQLContainer<>("mysql:8.0")
+                .withDatabaseName("settlement_test")
+                .withUsername("test")
+                .withPassword("test")
+                .withUrlParam("useSSL", "false")
+                .withUrlParam("allowPublicKeyRetrieval", "true")
+                .withUrlParam("serverTimezone", "Asia/Seoul")
+                .withCommand(
+                    "--character-set-server=utf8mb4",
+                    "--collation-server=utf8mb4_unicode_ci",
+                    "--skip-ssl"
+                );
+        mysql.start();
+    }
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {

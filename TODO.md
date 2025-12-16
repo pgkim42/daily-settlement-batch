@@ -86,18 +86,26 @@
 ## 다음 할 일 📋
 
 ### Phase 4: 통합 테스트 작성 (우선순위 높음)
-- [ ] **Repository 테스트**
+- [x] **Repository 테스트** (2025-12-15)
   - `src/test/java/com/company/settlement/repository/`
   - Testcontainers 사용
   - 복잡한 JPQL 쿼리 테스트
 
-- [ ] **Service 테스트**
-  - 정산 계산 로직 테스트
+- [x] **Service 테스트** (2025-12-16)
+  - CommissionCalculatorTest: 수수료 계산 단위 테스트 (29개 케이스)
   - 경계 조건 테스트 (0원, 최대값 등)
 
-- [ ] **Batch Job 테스트**
-  - JobLauncherTestUtils 사용
-  - 통합 시나리오 테스트
+- [x] **Batch Job 테스트** (2025-12-16)
+  - AbstractBatchTest: Testcontainers 기반 Batch 테스트 인프라
+  - DailySettlementJobTest: 배치 Job 통합 테스트 (5개 케이스)
+    - 정상 실행 및 정산 생성 검증
+    - 멱등성 테스트 (중복 실행 시 Skip)
+    - 정산 금액 계산 정확성
+    - 환불 포함 정산 계산
+
+- [ ] **API 통합 테스트** (미완료)
+  - MockMvc 기반 Controller 테스트
+  - SettlementController, AdminSettlementController
 
 ### Phase 5: 모니터링 (우선순위 낮음)
 

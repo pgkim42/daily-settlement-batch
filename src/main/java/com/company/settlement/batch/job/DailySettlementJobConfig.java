@@ -3,7 +3,7 @@ package com.company.settlement.batch.job;
 import com.company.settlement.batch.dto.SettlementContext;
 import com.company.settlement.batch.exception.SettlementAlreadyExistsException;
 import com.company.settlement.batch.exception.SettlementProcessingException;
-import com.company.settlement.batch.listener.JobExecutionListener;
+import com.company.settlement.batch.listener.DailySettlementJobListener;
 import com.company.settlement.batch.listener.SettlementItemSkipListener;
 import com.company.settlement.batch.processor.SettlementProcessor;
 import com.company.settlement.batch.writer.SettlementWriter;
@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;
-import org.springframework.batch.core.launch.support.RunIdIncrementer;
+
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.database.JpaPagingItemReader;
@@ -44,7 +44,7 @@ public class DailySettlementJobConfig {
     private final JpaPagingItemReader<Seller> sellerPagingItemReader;
     private final SettlementProcessor settlementProcessor;
     private final SettlementWriter settlementWriter;
-    private final JobExecutionListener jobExecutionListener;
+    private final DailySettlementJobListener dailySettlementJobListener;
     private final SettlementItemSkipListener skipListener;
 
     /**
@@ -53,18 +53,22 @@ public class DailySettlementJobConfig {
      * Job Parameters:
      * - targetDate: 정산 대상 날짜 (format: yyyy-MM-dd)
      *
-     * 재시작 정책:
-     * - RunIdIncrementer: 매 실행마다 새로운 run.id 부여 (중복 실행 방지)
-     * - 재시작 허용: 실패한 Job 재시작 가능 (동일 파라미터로 FAILED 상태에서 재실행)
-     * - 멱등성: SettlementProcessor에서 중복 정산 체크로 데이터 무결성 보장
+     * JobInstance 식별:
+     * - targetDate가 JobInstance의 식별자가 됨
+     * - 동일 targetDate로는 COMPLETED 상태에서 재실행 불가
+     * - FAILED 상태에서만 동일 파라미터로 재시작 가능
+     *
+     * 멱등성:
+     * - SettlementProcessor에서 중복 정산 체크로 데이터 무결성 보장
+     * - DB 유니크 제약 조건으로 최종 방어
      */
     @Bean
     public Job dailySettlementJob() {
         return new JobBuilder(JOB_NAME, jobRepository)
-            .incrementer(new RunIdIncrementer())
-            // preventRestart() 제거: 실패한 Job 재시작 허용
-            // 멱등성은 SettlementProcessor.checkIdempotency()에서 보장
-            .listener(jobExecutionListener)
+            // RunIdIncrementer 제거: targetDate가 JobInstance 식별자가 됨
+            // - 동일 targetDate로 COMPLETED 상태에서 재실행 방지
+            // - FAILED 상태에서만 재시작 가능
+            .listener(dailySettlementJobListener)
             .start(dailySettlementStep())
             .build();
     }

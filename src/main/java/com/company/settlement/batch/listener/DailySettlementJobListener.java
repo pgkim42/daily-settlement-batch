@@ -25,7 +25,7 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class JobExecutionListener implements org.springframework.batch.core.JobExecutionListener {
+public class DailySettlementJobListener implements org.springframework.batch.core.JobExecutionListener {
 
     public static final String JOB_NAME = "dailySettlementJob";
 
@@ -45,7 +45,7 @@ public class JobExecutionListener implements org.springframework.batch.core.JobE
         String targetDateStr = jobExecution.getJobParameters().getString("targetDate");
         LocalDate targetDate = LocalDate.parse(targetDateStr);
 
-        log.info("[JobExecutionListener] Starting job: {}, targetDate: {}", JOB_NAME, targetDate);
+        log.info("[DailySettlementJobListener] Starting job: {}, targetDate: {}", JOB_NAME, targetDate);
 
         // 중복 실행 체크
         Optional<SettlementJobExecution> existingExecution =
@@ -54,13 +54,13 @@ public class JobExecutionListener implements org.springframework.batch.core.JobE
         if (existingExecution.isPresent()) {
             SettlementJobExecution existing = existingExecution.get();
             if (existing.getExecutionStatus() == SettlementJobStatus.COMPLETED) {
-                log.warn("[JobExecutionListener] Job already completed for date: {}", targetDate);
+                log.warn("[DailySettlementJobListener] Job already completed for date: {}", targetDate);
                 // ExecutionContext에 스킵 플래그 설정
                 jobExecution.getExecutionContext().put("skipExecution", true);
                 return;
             }
             // 이전 실패/부분 실패 실행이 있으면 재실행 허용
-            log.info("[JobExecutionListener] Re-running job for date: {} (previous status: {})",
+            log.info("[DailySettlementJobListener] Re-running job for date: {} (previous status: {})",
                      targetDate, existing.getExecutionStatus());
             // 기존 실행 이력 삭제 후 새로 생성
             jobExecutionRepository.delete(existing);
@@ -82,7 +82,7 @@ public class JobExecutionListener implements org.springframework.batch.core.JobE
         // ExecutionContext에 실행 ID 저장 (다른 Listener에서 참조용)
         jobExecution.getExecutionContext().putLong("jobExecutionId", currentExecution.getId());
 
-        log.info("[JobExecutionListener] Created job execution record: id={}, totalSellers={}",
+        log.info("[DailySettlementJobListener] Created job execution record: id={}, totalSellers={}",
                  currentExecution.getId(), totalSellers);
     }
 
@@ -94,7 +94,7 @@ public class JobExecutionListener implements org.springframework.batch.core.JobE
     @Override
     public void afterJob(JobExecution jobExecution) {
         if (currentExecution == null) {
-            log.warn("[JobExecutionListener] No execution record found");
+            log.warn("[DailySettlementJobListener] No execution record found");
             return;
         }
 
@@ -112,21 +112,21 @@ public class JobExecutionListener implements org.springframework.batch.core.JobE
         // 실행 이력 업데이트
         if (batchStatus == BatchStatus.COMPLETED) {
             currentExecution.complete(writeCount, skipCount);
-            log.info("[JobExecutionListener] Job completed: success={}, skip={}",
+            log.info("[DailySettlementJobListener] Job completed: success={}, skip={}",
                      writeCount, skipCount);
         } else if (batchStatus == BatchStatus.FAILED) {
             String errorMessage = extractErrorMessage(jobExecution);
             currentExecution.fail(errorMessage);
-            log.error("[JobExecutionListener] Job failed: {}", errorMessage);
+            log.error("[DailySettlementJobListener] Job failed: {}", errorMessage);
         } else {
             // STOPPED, ABANDONED 등 기타 상태
             currentExecution.complete(writeCount, skipCount);
-            log.warn("[JobExecutionListener] Job ended with status: {}", batchStatus);
+            log.warn("[DailySettlementJobListener] Job ended with status: {}", batchStatus);
         }
 
         jobExecutionRepository.save(currentExecution);
 
-        log.info("[JobExecutionListener] Job execution completed: id={}, status={}, " +
+        log.info("[DailySettlementJobListener] Job execution completed: id={}, status={}, " +
                  "successRate={}%, duration={}s",
                  currentExecution.getId(),
                  currentExecution.getExecutionStatus(),

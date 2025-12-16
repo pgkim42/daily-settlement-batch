@@ -94,7 +94,6 @@ class DailySettlementJobTest extends AbstractBatchTest {
 
         JobParameters params = new JobParametersBuilder()
                 .addString("targetDate", targetDate.toString())
-                .addLong("timestamp", System.currentTimeMillis())
                 .toJobParameters();
 
         // when
@@ -124,7 +123,7 @@ class DailySettlementJobTest extends AbstractBatchTest {
     }
 
     @Test
-    @DisplayName("멱등성 검증 - 동일 기간 중복 실행 시 Skip")
+    @DisplayName("멱등성 검증 - 동일 기간 중복 실행 시 JobInstanceAlreadyCompleteException")
     void executeJob_Idempotency() throws Exception {
         // given
         LocalDate targetDate = LocalDate.of(2024, 1, 15);
@@ -135,7 +134,6 @@ class DailySettlementJobTest extends AbstractBatchTest {
 
         JobParameters params = new JobParametersBuilder()
                 .addString("targetDate", targetDate.toString())
-                .addLong("timestamp", System.currentTimeMillis())
                 .toJobParameters();
 
         // when - 첫 번째 실행
@@ -146,15 +144,12 @@ class DailySettlementJobTest extends AbstractBatchTest {
         long countAfterFirst = settlementRepository.count();
         assertThat(countAfterFirst).isEqualTo(1);
 
-        // when - 두 번째 실행 (동일 날짜)
-        JobParameters params2 = new JobParametersBuilder()
-                .addString("targetDate", targetDate.toString())
-                .addLong("timestamp", System.currentTimeMillis() + 1000)  // 다른 timestamp
-                .toJobParameters();
-        JobExecution execution2 = jobLauncherTestUtils.launchJob(params2);
-
-        // then - 두 번째 실행도 성공 (Skip 처리)
-        assertThat(execution2.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+        // when - 두 번째 실행 (동일 날짜, 동일 파라미터)
+        // RunIdIncrementer 제거로 동일 targetDate는 동일 JobInstance가 되어
+        // COMPLETED 상태에서 재실행 시 JobInstanceAlreadyCompleteException 발생
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> 
+            jobLauncherTestUtils.launchJob(params)
+        ).isInstanceOf(org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException.class);
 
         // 정산 데이터는 여전히 1개 (중복 생성 안됨)
         long countAfterSecond = settlementRepository.count();
@@ -169,7 +164,6 @@ class DailySettlementJobTest extends AbstractBatchTest {
 
         JobParameters params = new JobParametersBuilder()
                 .addString("targetDate", targetDate.toString())
-                .addLong("timestamp", System.currentTimeMillis())
                 .toJobParameters();
 
         // when
@@ -197,7 +191,6 @@ class DailySettlementJobTest extends AbstractBatchTest {
 
         JobParameters params = new JobParametersBuilder()
                 .addString("targetDate", targetDate.toString())
-                .addLong("timestamp", System.currentTimeMillis())
                 .toJobParameters();
 
         // when
@@ -242,7 +235,6 @@ class DailySettlementJobTest extends AbstractBatchTest {
 
         JobParameters params = new JobParametersBuilder()
                 .addString("targetDate", targetDate.toString())
-                .addLong("timestamp", System.currentTimeMillis())
                 .toJobParameters();
 
         // when

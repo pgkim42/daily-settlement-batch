@@ -28,7 +28,7 @@ import java.util.List;
 @Slf4j
 public class SettlementItemSkipListener implements SkipListener<Seller, SettlementContext> {
 
-    private final JobExecutionListener jobExecutionListener;
+    private final DailySettlementJobListener dailySettlementJobListener;
 
     // Skip된 판매자 정보 저장 (모니터링/알림용)
     @Getter
@@ -111,7 +111,7 @@ public class SettlementItemSkipListener implements SkipListener<Seller, Settleme
      * JobExecution 통계 업데이트
      */
     private void updateJobExecutionStats(String reason) {
-        var execution = jobExecutionListener.getCurrentExecution();
+        var execution = dailySettlementJobListener.getCurrentExecution();
         if (execution != null) {
             execution.incrementFailureCount(reason);
         }

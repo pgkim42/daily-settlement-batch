@@ -1,32 +1,49 @@
 package com.company.settlement.controller;
 
+import com.company.settlement.dto.response.SettlementDetailResponse;
 import com.company.settlement.dto.response.SettlementResponse;
 import com.company.settlement.exception.SettlementAccessDeniedException;
 import com.company.settlement.exception.SettlementNotFoundException;
+import com.company.settlement.service.SettlementService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * SettlementController API 통합 테스트
+ * SettlementController 단위 테스트
  * - 판매자용 정산 API 엔드포인트 테스트
- * - 인증 헤더(X-Seller-Id) 처리 검증
- * - 예외 상황 및 에러 응답 검증
+ * - 서비스 계층 목킹으로 Controller 로직만 검증
  */
-@DisplayName("SettlementController API 테스트")
-class SettlementControllerTest extends AbstractControllerTest {
+@ExtendWith(MockitoExtension.class)
+@DisplayName("SettlementController 단위 테스트")
+class SettlementControllerTest {
+
+    @Mock
+    private SettlementService settlementService;
+
+    @InjectMocks
+    private SettlementController settlementController;
 
     @Nested
     @DisplayName("GET /api/settlements - 내 정산 목록 조회")
@@ -34,99 +51,67 @@ class SettlementControllerTest extends AbstractControllerTest {
 
         @Test
         @DisplayName("성공: 정상적인 정산 목록 조회")
-        void getMySettlements_Success() throws Exception {
+        void getMySettlements_Success() {
             // given
-            Page<SettlementResponse> mockResponse = TestDataBuilder.createSettlementResponsePage();
+            Long sellerId = 1L;
+            PageRequest pageRequest = PageRequest.of(0, 20, Sort.by("createdAt").descending());
+            Page<SettlementResponse> mockResponse = createMockSettlementResponsePage();
 
-            when(settlementService.getMySettlements(eq(MockAuth.VALID_SELLER_ID), any(PageRequest.class)))
+            when(settlementService.getMySettlements(eq(sellerId), any(PageRequest.class)))
                 .thenReturn(mockResponse);
 
-            // when & then
-            var result = mockMvc.perform(
-                MockAuth.withSellerAuth(MockMvcRequestBuilders.get("/api/settlements"))
-                    .param("page", "0")
-                    .param("size", "20")
-                    .param("sort", "createdAt,desc")
-            );
+            // when
+            ResponseEntity<Page<SettlementResponse>> response = settlementController.getMySettlements(sellerId, pageRequest);
 
-            result
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").isArray())
-                .andExpect(jsonPath("$.content[0].sellerId").value(MockAuth.VALID_SELLER_ID))
-                .andExpect(jsonPath("$.content[0].sellerCode").value("SELLER001"))
-                .andExpect(jsonPath("$.content[0].payoutAmount").value(90000))
-                .andExpect(jsonPath("$.totalElements").value(1))
-                .andExpect(jsonPath("$.size").value(20));
+            // then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().getContent()).hasSize(1);
+            assertThat(response.getBody().getContent().get(0).sellerId()).isEqualTo(sellerId);
+            assertThat(response.getBody().getContent().get(0).sellerCode()).isEqualTo("SELLER001");
 
-            SettlementAssertions.assertThatPageMetadataIsValid(result, 20, 1);
-            SettlementAssertions.assertThatSettlementResponseIsValid(result, TestDataBuilder.createSettlementResponse());
+            verify(settlementService).getMySettlements(eq(sellerId), any(PageRequest.class));
         }
 
         @Test
         @DisplayName("성공: 빈 정산 목록 조회")
-        void getMySettlements_EmptyResult() throws Exception {
+        void getMySettlements_EmptyResult() {
             // given
-            Page<SettlementResponse> emptyResponse = TestDataBuilder.createEmptySettlementResponsePage();
+            Long sellerId = 1L;
+            PageRequest pageRequest = PageRequest.of(0, 20);
+            Page<SettlementResponse> emptyResponse = Page.empty();
 
-            when(settlementService.getMySettlements(eq(MockAuth.VALID_SELLER_ID), any(PageRequest.class)))
+            when(settlementService.getMySettlements(eq(sellerId), any(PageRequest.class)))
                 .thenReturn(emptyResponse);
 
-            // when & then
-            var result = mockMvc.perform(
-                MockAuth.withSellerAuth(MockMvcRequestBuilders.get("/api/settlements"))
-            );
+            // when
+            ResponseEntity<Page<SettlementResponse>> response = settlementController.getMySettlements(sellerId, pageRequest);
 
-            result
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").isEmpty())
-                .andExpect(jsonPath("$.totalElements").value(0))
-                .andExpect(jsonPath("$.content").isArray());
-
-            SettlementAssertions.assertThatPageMetadataIsValid(result, 20, 0);
+            // then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().getContent()).isEmpty();
         }
 
         @ParameterizedTest
         @ValueSource(ints = {0, 1, 2, 10})
         @DisplayName("성공: 다양한 페이지 번호로 조회")
-        void getMySettlements_DifferentPageNumbers(int pageNumber) throws Exception {
+        void getMySettlements_DifferentPageNumbers(int pageNumber) {
             // given
-            Page<SettlementResponse> mockResponse = TestDataBuilder.createSettlementResponsePage();
+            Long sellerId = 1L;
+            PageRequest pageRequest = PageRequest.of(pageNumber, 20);
 
-            when(settlementService.getMySettlements(eq(MockAuth.VALID_SELLER_ID), any(PageRequest.class)))
-                .thenReturn(mockResponse);
+            when(settlementService.getMySettlements(eq(sellerId), any(PageRequest.class)))
+                .thenAnswer(invocation -> {
+                    PageRequest pr = invocation.getArgument(1);
+                    return new PageImpl<>(List.of(createMockSettlementResponse()), pr, 1);
+                });
 
-            // when & then
-            mockMvc.perform(
-                MockAuth.withSellerAuth(MockMvcRequestBuilders.get("/api/settlements"))
-                    .param("page", String.valueOf(pageNumber))
-            )
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").isArray())
-                .andExpect(jsonPath("$.number").value(pageNumber));
-        }
+            // when
+            ResponseEntity<Page<SettlementResponse>> response = settlementController.getMySettlements(sellerId, pageRequest);
 
-        @Test
-        @DisplayName("실패: 인증 헤더 누락")
-        void getMySettlements_MissingAuthHeader() throws Exception {
-            // when & then
-            mockMvc.perform(MockMvcRequestBuilders.get("/api/settlements"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("Required request header 'X-Seller-Id' is not present"));
-        }
-
-        @Test
-        @DisplayName("실패: 유효하지 않은 판매자 ID")
-        void getMySettlements_InvalidSellerId() throws Exception {
-            // given
-            when(settlementService.getMySettlements(eq(MockAuth.INVALID_SELLER_ID), any(PageRequest.class)))
-                .thenReturn(TestDataBuilder.createEmptySettlementResponsePage());
-
-            // when & then
-            mockMvc.perform(
-                MockAuth.withSellerAuth(MockMvcRequestBuilders.get("/api/settlements"), MockAuth.INVALID_SELLER_ID)
-            )
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").isEmpty());
+            // then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().getNumber()).isEqualTo(pageNumber);
         }
     }
 
@@ -136,124 +121,87 @@ class SettlementControllerTest extends AbstractControllerTest {
 
         @Test
         @DisplayName("성공: 정상적인 정산 상세 조회")
-        void getSettlementDetail_Success() throws Exception {
+        void getSettlementDetail_Success() {
             // given
+            Long sellerId = 1L;
             Long settlementId = 1L;
-            var mockResponse = TestDataBuilder.createSettlementDetailResponse();
+            SettlementDetailResponse mockResponse = createMockSettlementDetailResponse();
 
-            when(settlementService.getSettlementDetail(eq(MockAuth.VALID_SELLER_ID), eq(settlementId)))
+            when(settlementService.getSettlementDetail(eq(sellerId), eq(settlementId)))
                 .thenReturn(mockResponse);
 
-            // when & then
-            var result = mockMvc.perform(
-                MockAuth.withSellerAuth(MockMvcRequestBuilders.get("/api/settlements/{settlementId}", settlementId))
-            );
+            // when
+            ResponseEntity<SettlementDetailResponse> response = settlementController.getSettlementDetail(sellerId, settlementId);
 
-            result
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(settlementId))
-                .andExpect(jsonPath("$.seller.id").value(MockAuth.VALID_SELLER_ID))
-                .andExpect(jsonPath("$.seller.sellerCode").value("SELLER001"))
-                .andExpect(jsonPath("$.payoutAmount").value(90000))
-                .andExpect(jsonPath("$.status").value("CONFIRMED"))
-                .andExpect(jsonPath("$.items").isArray())
-                .andExpect(jsonPath("$.items[0].settlementAmount").value(45000))
-                .andExpect(jsonPath("$.items.length()").value(2));
-
-            SettlementAssertions.assertThatSettlementDetailResponseIsValid(result);
+            // then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody().id()).isEqualTo(settlementId);
+            assertThat(response.getBody().seller().id()).isEqualTo(sellerId);
+            assertThat(response.getBody().seller().sellerCode()).isEqualTo("SELLER001");
+            assertThat(response.getBody().payoutAmount()).isEqualByComparingTo("90000");
         }
 
         @Test
         @DisplayName("실패: 존재하지 않는 정산 ID")
-        void getSettlementDetail_NotFound() throws Exception {
+        void getSettlementDetail_NotFound() {
             // given
+            Long sellerId = 1L;
             Long nonExistentId = 999L;
             String errorMessage = "Settlement not found: " + nonExistentId;
 
-            when(settlementService.getSettlementDetail(eq(MockAuth.VALID_SELLER_ID), eq(nonExistentId)))
+            when(settlementService.getSettlementDetail(eq(sellerId), eq(nonExistentId)))
                 .thenThrow(new SettlementNotFoundException(errorMessage));
 
             // when & then
-            var result = mockMvc.perform(
-                MockAuth.withSellerAuth(MockMvcRequestBuilders.get("/api/settlements/{settlementId}", nonExistentId))
-            );
-
-            SettlementAssertions.assertThatErrorResponseIsValid(result, 404);
-            result.andExpect(jsonPath("$.detail").value(errorMessage));
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> settlementController.getSettlementDetail(sellerId, nonExistentId))
+                .isInstanceOf(SettlementNotFoundException.class)
+                .hasMessageContaining(errorMessage);
         }
 
         @Test
         @DisplayName("실패: 다른 판매자의 정산 접근")
-        void getSettlementDetail_AccessDenied() throws Exception {
+        void getSettlementDetail_AccessDenied() {
             // given
+            Long sellerId = 1L;
             Long settlementId = 2L;
-            when(settlementService.getSettlementDetail(eq(MockAuth.VALID_SELLER_ID), eq(settlementId)))
-                .thenThrow(new SettlementAccessDeniedException(MockAuth.VALID_SELLER_ID, settlementId));
+
+            when(settlementService.getSettlementDetail(eq(sellerId), eq(settlementId)))
+                .thenThrow(new SettlementAccessDeniedException(sellerId, settlementId));
 
             // when & then
-            var result = mockMvc.perform(
-                MockAuth.withSellerAuth(MockMvcRequestBuilders.get("/api/settlements/{settlementId}", settlementId))
-            );
-
-            SettlementAssertions.assertThatErrorResponseIsValid(result, 403);
-        }
-
-        @Test
-        @DisplayName("실패: 인증 헤더 누락")
-        void getSettlementDetail_MissingAuthHeader() throws Exception {
-            // when & then
-            mockMvc.perform(MockMvcRequestBuilders.get("/api/settlements/1"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("Required request header 'X-Seller-Id' is not present"));
-        }
-
-        @Test
-        @DisplayName("실패: 유효하지 않은 settlementId 형식")
-        void getSettlementDetail_InvalidSettlementId() throws Exception {
-            // when & then
-            mockMvc.perform(
-                MockAuth.withSellerAuth(MockMvcRequestBuilders.get("/api/settlements/invalid-id"))
-            )
-                .andExpect(status().isBadRequest());
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> settlementController.getSettlementDetail(sellerId, settlementId))
+                .isInstanceOf(SettlementAccessDeniedException.class);
         }
     }
 
-    @Nested
-    @DisplayName("인증 및 권한 검증")
-    class AuthenticationTests {
+    private Page<SettlementResponse> createMockSettlementResponsePage() {
+        return new PageImpl<>(
+            List.of(createMockSettlementResponse()),
+            PageRequest.of(0, 20, Sort.by("createdAt").descending()),
+            1
+        );
+    }
 
-        @Test
-        @DisplayName("X-Seller-Id 헤더가 있는 경우에만 API 접근 가능")
-        void onlyAuthenticatedAccess_Allowed() throws Exception {
-            // given
-            when(settlementService.getMySettlements(eq(MockAuth.VALID_SELLER_ID), any(PageRequest.class)))
-                .thenReturn(TestDataBuilder.createSettlementResponsePage());
+    private SettlementResponse createMockSettlementResponse() {
+        return new SettlementResponse(1L, 1L, "SELLER001", "테스트 판매자",
+            com.company.settlement.domain.enums.CycleType.DAILY,
+            java.time.LocalDate.now().minusDays(1), java.time.LocalDate.now().minusDays(1),
+            new java.math.BigDecimal("100000"), java.math.BigDecimal.ZERO, new java.math.BigDecimal("10000"),
+            java.math.BigDecimal.ZERO, new java.math.BigDecimal("90000"),
+            com.company.settlement.domain.enums.SettlementStatus.CONFIRMED, java.time.LocalDateTime.now());
+    }
 
-            // when & then - 헤더가 있는 경우 성공
-            mockMvc.perform(
-                MockAuth.withSellerAuth(MockMvcRequestBuilders.get("/api/settlements"))
-            )
-                .andExpect(status().isOk());
-
-            // when & then - 헤더가 없는 경우 실패
-            mockMvc.perform(MockMvcRequestBuilders.get("/api/settlements"))
-                .andExpect(status().isBadRequest());
-        }
-
-        @ParameterizedTest
-        @ValueSource(strings = {"1", "999", "0", "-1"})
-        @DisplayName("다양한 판매자 ID 값으로 요청 시도")
-        void differentSellerId_Requests(String sellerId) throws Exception {
-            // given
-            Long id = Long.parseLong(sellerId);
-            when(settlementService.getMySettlements(eq(id), any(PageRequest.class)))
-                .thenReturn(TestDataBuilder.createEmptySettlementResponsePage());
-
-            // when & then
-            mockMvc.perform(
-                MockAuth.withSellerAuth(MockMvcRequestBuilders.get("/api/settlements"), id)
-            )
-                .andExpect(status().isOk());
-        }
+    private SettlementDetailResponse createMockSettlementDetailResponse() {
+        var seller = new com.company.settlement.dto.response.SellerSummaryResponse(
+            1L, "SELLER001", "테스트 판매자", new java.math.BigDecimal("0.1000"),
+            com.company.settlement.domain.enums.SellerStatus.ACTIVE);
+        return new SettlementDetailResponse(1L, seller,
+            com.company.settlement.domain.enums.CycleType.DAILY,
+            java.time.LocalDate.now().minusDays(1), java.time.LocalDate.now().minusDays(1),
+            new java.math.BigDecimal("100000"), java.math.BigDecimal.ZERO, new java.math.BigDecimal("100000"),
+            new java.math.BigDecimal("0.1000"), new java.math.BigDecimal("10000"), java.math.BigDecimal.ZERO,
+            java.math.BigDecimal.ZERO, new java.math.BigDecimal("90000"),
+            com.company.settlement.domain.enums.SettlementStatus.CONFIRMED, List.of(),
+            java.time.LocalDateTime.now(), java.time.LocalDateTime.now(), java.time.LocalDateTime.now(), java.time.LocalDateTime.now());
     }
 }

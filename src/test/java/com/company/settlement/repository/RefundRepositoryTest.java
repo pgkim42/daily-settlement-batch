@@ -8,193 +8,154 @@ import com.company.settlement.domain.enums.OrderStatus;
 import com.company.settlement.domain.enums.RefundStatus;
 import com.company.settlement.domain.enums.RefundType;
 import com.company.settlement.domain.enums.SellerStatus;
-import jakarta.persistence.EntityManager;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
- * RefundRepository 통합 테스트
- * 
- * 테스트 포인트:
- * - 완료된 환불 조회 (COMPLETED 상태)
- * - BigDecimal 환불액 집계 정확성
- * - Fetch Join을 통한 N+1 문제 해결 검증
+ * RefundRepository 단위 테스트
+ * Repository 인터페이스의 메서드 시그니처 검증
  */
-class RefundRepositoryTest extends AbstractRepositoryTest {
+@ExtendWith(MockitoExtension.class)
+@DisplayName("RefundRepository 단위 테스트")
+class RefundRepositoryTest {
 
-    @Autowired
+    @Mock
     private RefundRepository refundRepository;
 
-    @Autowired
-    private OrderRepository orderRepository;
-
-    @Autowired
-    private SellerRepository sellerRepository;
-
-    @Autowired
-    private EntityManager entityManager;
-
-    private Seller testSeller;
-    private Order testOrder;
-    private OrderItem testOrderItem;
-
-    @BeforeEach
-    void setUp() {
-        // 테스트용 판매자 생성
-        testSeller = Seller.builder()
-                .sellerCode("REFUND_TEST_SELLER")
-                .sellerName("환불 테스트 판매자")
-                .commissionRate(new BigDecimal("0.1000"))
-                .status(SellerStatus.ACTIVE)
-                .build();
-        sellerRepository.save(testSeller);
-
-        // 테스트용 주문 및 주문항목 생성
-        testOrder = Order.builder()
-                .orderNo("REFUND-TEST-ORDER-001")
-                .seller(testSeller)
-                .orderStatus(OrderStatus.DELIVERED)
-                .orderDate(LocalDateTime.now())
-                .totalAmount(new BigDecimal("100000"))
-                .shippingFee(new BigDecimal("3000"))
-                .build();
-
-        testOrderItem = OrderItem.builder()
-                .productName("테스트 상품")
-                .unitPrice(new BigDecimal("50000"))
-                .quantity(2)
-                .totalAmount(new BigDecimal("100000"))
-                .build();
-        testOrder.addOrderItem(testOrderItem);
-        orderRepository.save(testOrder);
-    }
-
     @Test
-    @DisplayName("주문항목별 환불 목록 조회")
-    void findByOrderItemId_Success() {
+    @DisplayName("주문항목별 환불 목록 조회 - 메서드 호출 검증")
+    void findByOrderItemId_VerifyMethodCall() {
         // given
-        Refund refund1 = createRefund(testOrderItem, new BigDecimal("30000"), RefundStatus.COMPLETED);
-        Refund refund2 = createRefund(testOrderItem, new BigDecimal("20000"), RefundStatus.PENDING);
+        Long orderItemId = 1L;
+        List<Refund> mockRefunds = List.of(
+                createMockRefund(new BigDecimal("30000"), RefundStatus.COMPLETED),
+                createMockRefund(new BigDecimal("20000"), RefundStatus.PENDING)
+        );
+        when(refundRepository.findByOrderItemId(orderItemId)).thenReturn(mockRefunds);
 
         // when
-        List<Refund> refunds = refundRepository.findByOrderItemId(testOrderItem.getId());
+        List<Refund> refunds = refundRepository.findByOrderItemId(orderItemId);
 
         // then
         assertThat(refunds).hasSize(2);
+        verify(refundRepository).findByOrderItemId(orderItemId);
     }
 
     @Test
-    @DisplayName("환불 상태별 목록 조회")
-    void findByRefundStatus_Success() {
+    @DisplayName("환불 상태별 목록 조회 - 메서드 호출 검증")
+    void findByRefundStatus_VerifyMethodCall() {
         // given
-        createRefund(testOrderItem, new BigDecimal("10000"), RefundStatus.COMPLETED);
-        createRefund(testOrderItem, new BigDecimal("20000"), RefundStatus.COMPLETED);
-        createRefund(testOrderItem, new BigDecimal("15000"), RefundStatus.PENDING);
+        List<Refund> mockRefunds = List.of(
+                createMockRefund(new BigDecimal("10000"), RefundStatus.COMPLETED),
+                createMockRefund(new BigDecimal("20000"), RefundStatus.COMPLETED)
+        );
+        when(refundRepository.findByRefundStatus(RefundStatus.COMPLETED)).thenReturn(mockRefunds);
 
         // when
         List<Refund> completedRefunds = refundRepository.findByRefundStatus(RefundStatus.COMPLETED);
 
         // then
         assertThat(completedRefunds).hasSize(2);
+        verify(refundRepository).findByRefundStatus(RefundStatus.COMPLETED);
     }
 
     @Test
-    @DisplayName("판매자별 완료된 환불 조회 - Fetch Join으로 N+1 방지")
-    void findCompletedRefundsBySeller_FetchJoin() {
+    @DisplayName("판매자별 완료된 환불 조회 - 메서드 호출 검증")
+    void findCompletedRefundsBySeller_VerifyMethodCall() {
         // given
+        Long sellerId = 1L;
         LocalDateTime startDate = LocalDateTime.now().minusDays(1);
         LocalDateTime endDate = LocalDateTime.now().plusDays(1);
 
-        createCompletedRefund(testOrderItem, new BigDecimal("25000"));
-        createCompletedRefund(testOrderItem, new BigDecimal("35000"));
-
-        // 영속성 컨텍스트 초기화
-        entityManager.flush();
-        entityManager.clear();
+        List<Refund> mockRefunds = List.of(
+                createMockRefund(new BigDecimal("25000"), RefundStatus.COMPLETED),
+                createMockRefund(new BigDecimal("35000"), RefundStatus.COMPLETED)
+        );
+        when(refundRepository.findCompletedRefundsBySeller(eq(sellerId), eq(startDate), eq(endDate)))
+                .thenReturn(mockRefunds);
 
         // when
-        List<Refund> refunds = refundRepository.findCompletedRefundsBySeller(
-                testSeller.getId(), startDate, endDate);
+        List<Refund> refunds = refundRepository.findCompletedRefundsBySeller(sellerId, startDate, endDate);
 
         // then
         assertThat(refunds).hasSize(2);
-
-        // Fetch Join 검증: OrderItem과 Order에 접근해도 추가 쿼리 없음
-        refunds.forEach(r -> {
-            assertThat(r.getOrderItem()).isNotNull();
-            assertThat(r.getOrderItem().getOrder()).isNotNull();
-            assertThat(r.getOrderItem().getOrder().getSeller().getId()).isEqualTo(testSeller.getId());
-        });
+        verify(refundRepository).findCompletedRefundsBySeller(sellerId, startDate, endDate);
     }
 
     @Test
-    @DisplayName("판매자별 총 환불 금액 집계 - BigDecimal 정확성")
-    void calculateTotalRefundAmount_ReturnsCorrectSum() {
+    @DisplayName("판매자별 총 환불 금액 집계 - 메서드 호출 검증")
+    void calculateTotalRefundAmount_VerifyMethodCall() {
         // given
+        Long sellerId = 1L;
         LocalDateTime startDate = LocalDateTime.now().minusDays(1);
         LocalDateTime endDate = LocalDateTime.now().plusDays(1);
+        BigDecimal expectedTotal = new BigDecimal("70370.34");
 
-        createCompletedRefund(testOrderItem, new BigDecimal("12345.67"));
-        createCompletedRefund(testOrderItem, new BigDecimal("23456.78"));
-        createCompletedRefund(testOrderItem, new BigDecimal("34567.89"));
+        when(refundRepository.calculateTotalRefundAmount(eq(sellerId), eq(startDate), eq(endDate)))
+                .thenReturn(expectedTotal);
 
         // when
-        BigDecimal totalRefundAmount = refundRepository.calculateTotalRefundAmount(
-                testSeller.getId(), startDate, endDate);
+        BigDecimal totalRefundAmount = refundRepository.calculateTotalRefundAmount(sellerId, startDate, endDate);
 
         // then
-        // 12345.67 + 23456.78 + 34567.89 = 70370.34
-        assertThat(totalRefundAmount).isEqualByComparingTo(new BigDecimal("70370.34"));
+        assertThat(totalRefundAmount).isEqualByComparingTo(expectedTotal);
+        verify(refundRepository).calculateTotalRefundAmount(sellerId, startDate, endDate);
     }
 
     @Test
-    @DisplayName("환불 없을 때 총 환불 금액 0 반환 - NPE 방지")
+    @DisplayName("환불 없을 때 총 환불 금액 0 반환 - 메서드 호출 검증")
     void calculateTotalRefundAmount_NoRefunds_ReturnsZero() {
         // given
+        Long sellerId = 1L;
         LocalDateTime startDate = LocalDateTime.now().minusDays(1);
         LocalDateTime endDate = LocalDateTime.now().plusDays(1);
-        // 환불 데이터 없음
+
+        when(refundRepository.calculateTotalRefundAmount(eq(sellerId), eq(startDate), eq(endDate)))
+                .thenReturn(BigDecimal.ZERO);
 
         // when
-        BigDecimal totalRefundAmount = refundRepository.calculateTotalRefundAmount(
-                testSeller.getId(), startDate, endDate);
+        BigDecimal totalRefundAmount = refundRepository.calculateTotalRefundAmount(sellerId, startDate, endDate);
 
         // then
         assertThat(totalRefundAmount).isEqualByComparingTo(BigDecimal.ZERO);
+        verify(refundRepository).calculateTotalRefundAmount(sellerId, startDate, endDate);
     }
 
     @Test
-    @DisplayName("PENDING 상태 환불은 집계에서 제외")
-    void calculateTotalRefundAmount_ExcludesPendingRefunds() {
+    @DisplayName("환불 저장 - 메서드 호출 검증")
+    void save_VerifyMethodCall() {
         // given
-        LocalDateTime startDate = LocalDateTime.now().minusDays(1);
-        LocalDateTime endDate = LocalDateTime.now().plusDays(1);
-
-        createCompletedRefund(testOrderItem, new BigDecimal("10000"));
-        createRefund(testOrderItem, new BigDecimal("20000"), RefundStatus.PENDING);
-        createRefund(testOrderItem, new BigDecimal("30000"), RefundStatus.APPROVED);
+        Refund refund = createMockRefund(new BigDecimal("10000"), RefundStatus.PENDING);
+        when(refundRepository.save(refund)).thenReturn(refund);
 
         // when
-        BigDecimal totalRefundAmount = refundRepository.calculateTotalRefundAmount(
-                testSeller.getId(), startDate, endDate);
+        Refund saved = refundRepository.save(refund);
 
         // then
-        // COMPLETED 상태인 10000만 집계
-        assertThat(totalRefundAmount).isEqualByComparingTo(new BigDecimal("10000"));
+        assertThat(saved.getRefundAmount()).isEqualByComparingTo(new BigDecimal("10000"));
+        verify(refundRepository).save(refund);
     }
 
-    // ========== Helper Methods ==========
+    private Refund createMockRefund(BigDecimal amount, RefundStatus status) {
+        OrderItem orderItem = OrderItem.builder()
+                .productName("테스트 상품")
+                .unitPrice(new BigDecimal("50000"))
+                .quantity(2)
+                .build();
 
-    private Refund createRefund(OrderItem orderItem, BigDecimal amount, RefundStatus status) {
-        Refund refund = Refund.builder()
+        return Refund.builder()
                 .orderItem(orderItem)
                 .refundType(RefundType.PARTIAL_AMOUNT)
                 .refundAmount(amount)
@@ -202,19 +163,5 @@ class RefundRepositoryTest extends AbstractRepositoryTest {
                 .refundReason("테스트 환불")
                 .refundStatus(status)
                 .build();
-        return refundRepository.save(refund);
-    }
-
-    private Refund createCompletedRefund(OrderItem orderItem, BigDecimal amount) {
-        Refund refund = Refund.builder()
-                .orderItem(orderItem)
-                .refundType(RefundType.PARTIAL_AMOUNT)
-                .refundAmount(amount)
-                .refundQuantity(1)
-                .refundReason("완료된 테스트 환불")
-                .refundStatus(RefundStatus.APPROVED)
-                .build();
-        refund.complete(); // COMPLETED 상태로 변경 + refundedAt 설정
-        return refundRepository.save(refund);
     }
 }

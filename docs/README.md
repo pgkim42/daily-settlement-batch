@@ -514,7 +514,7 @@ open build/reports/tests/test/index.html
 주문 발생 → OrderPaidEvent 발행 → 정산 대상 큐에 적재 → 정산 Worker 처리
 ```
 
-**필요 기술**: Kafka, Redis(정산 대기열), Debezium(CDC)
+**필요 기술**: Kafka, Debezium(CDC)
 
 **트레이드오프**:
 - 장점: 준실시간 정산, 배치 부하 분산
@@ -615,7 +615,7 @@ public void generateWeeklyReport() {
 | 개선 항목 | 현재 | 목표 | 방법 |
 |-----------|------|------|------|
 | 배치 처리량 | 100건/초 | 1,000건/초 | 파티셔닝, 병렬 Step |
-| 정산 조회 | 500ms | 50ms | Redis 캐싱, 요약 테이블 |
+| 정산 조회 | 500ms | 50ms | 요약 테이블, 인덱스 최적화 |
 | DB 부하 | 높음 | 중간 | Read Replica 분리 |
 
 ---

@@ -4,7 +4,7 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
 
 ## 프로젝트 개요
 
-이 프로젝트는 대규모 마켓플레이스에서 수많은 판매자들의 주문, 결제, 환불 데이터를 처리하여 일일 정산금을 계산하고 지급하는 배치 시스템입니다.
+대규모 마켓플레이스에서 수많은 판매자들의 주문, 결제, 환불 데이터를 처리하여 일일 정산금을 계산하고 지급하는 배치 시스템.
 
 ### 주요 기능
 
@@ -17,40 +17,13 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
 
 ### 기술 스택
 
-- **Backend**: Java 21, Spring Boot 3.5, Spring Batch 5
-- **Database**: MySQL 8.0 (Flyway 마이그레이션)
-- **Build**: Gradle 8
-- **Test**: JUnit 5, AssertJ
-- **Infrastructure**: Docker, Docker Compose
-
-## 🔄 개발 프로세스
-
-이 프로젝트는 정해진 개발 프로세스를 따릅니다. 새로운 기능 개발 시 반드시 아래 단계를 거쳐야 합니다:
-
-1. **PRD 작성** → 2. **PRD 검토 및 보완** → 3. **설계 계획 작성** → 4. **설계 검토 및 보완** → 5. **구현**
-
-자세한 내용은 [WORKFLOW.md](./WORKFLOW.md)를 참고하세요.
-
-### 현재 진행상황
-- ✅ PRD 작성 완료
-- ✅ 기술 설계 계획 완료
-- ✅ 도메인 Entity 및 Repository 구현 완료
-- ✅ Spring Batch Job 구현 완료
-- ✅ 스케줄러 및 정산 API 구현 완료
-- ✅ 코드 리뷰 기반 리팩터링 완료
-- ⏳ 통합 테스트 코드 작성 예정
-
-## 아키텍처
-
-```
-┌─────────────────────────────────────────────────────┐
-│                     전체 구조                           │
-│                                                      │
-│  주문/결제 → [배치 처리] → 정산금 계산 → 판매자 지급        │
-│      ↓              ↓           ↓              ↓      │
-│   수집            계산         검증           API      │
-└─────────────────────────────────────────────────────┘
-```
+| 분류 | 기술 |
+|------|------|
+| Backend | Java 21, Spring Boot 3.5, Spring Batch 5 |
+| Database | MySQL 8.0, Flyway |
+| Build | Gradle 8 |
+| Test | JUnit 5, AssertJ, ArchUnit |
+| Infrastructure | Docker, Docker Compose |
 
 ## 빠른 시작
 
@@ -58,30 +31,101 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
 
 - Java 21+
 - Docker & Docker Compose
-- MySQL 8.0+ (Docker로 대체 가능)
 
 ### 실행 방법
 
-1. **레포지토리 클론**
-   ```bash
-   git clone https://github.com/[username]/daily-settlement-batch.git
-   cd daily-settlement-batch
-   ```
+```bash
+# 1. 레포지토리 클론
+git clone https://github.com/pgkim42/daily-settlement-batch.git
+cd daily-settlement-batch
 
-2. **Docker로 인프라 실행**
-   ```bash
-   docker-compose up -d
-   ```
+# 2. Docker로 MySQL 실행
+docker-compose up -d
 
-3. **애플리케이션 실행**
-   ```bash
-   ./gradlew bootRun
-   ```
+# 3. 애플리케이션 실행
+./gradlew bootRun
 
-4. **접속 확인**
-   - Health Check: http://localhost:8080/actuator/health
+# 4. Health Check
+curl http://localhost:8080/actuator/health
+```
 
-## 주요 테이블
+## 프로젝트 구조
+
+```
+src/main/java/com/company/settlement/
+├── batch/              # Spring Batch (Job, Reader, Processor, Writer)
+│   ├── config/         # 배치 설정
+│   ├── job/            # Job 정의
+│   ├── listener/       # Job/Step Listener
+│   ├── processor/      # 정산 계산 로직
+│   ├── reader/         # 판매자 조회
+│   ├── scheduler/      # 스케줄러 (매일 02:00)
+│   ├── service/        # CommissionCalculator
+│   └── writer/         # 정산 데이터 저장
+├── config/             # JPA 설정
+├── controller/         # REST API
+├── domain/
+│   ├── entity/         # JPA 엔티티 (9개)
+│   └── enums/          # Enum (10개)
+├── dto/                # Request/Response DTO
+├── exception/          # 예외 처리
+├── repository/         # Spring Data JPA
+└── service/            # 비즈니스 로직
+```
+
+## API 엔드포인트
+
+### 판매자용 API
+
+| 메서드 | 엔드포인트 | 설명 |
+|--------|-----------|------|
+| GET | /api/settlements | 내 정산 목록 조회 |
+| GET | /api/settlements/{id} | 정산 상세 조회 |
+
+### 관리자용 API
+
+| 메서드 | 엔드포인트 | 설명 |
+|--------|-----------|------|
+| GET | /api/admin/settlements | 전체 정산 목록 |
+| GET | /api/admin/settlements/period | 기간별 조회 |
+| GET | /api/admin/settlements/{id} | 정산 상세 |
+| GET | /api/admin/settlements/statistics | 통계 |
+| POST | /api/admin/settlements/batch/trigger | 배치 수동 실행 |
+
+## 배치 처리
+
+### 처리 흐름
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  dailySettlementJob (매일 02:00 KST)                         │
+│                                                              │
+│  ┌──────────┐    ┌──────────────┐    ┌──────────────┐       │
+│  │  Reader  │ -> │  Processor   │ -> │    Writer    │       │
+│  │ 판매자   │    │ 정산금 계산   │    │ 정산 데이터  │       │
+│  │ 목록조회 │    │              │    │    저장     │       │
+│  └──────────┘    └──────────────┘    └──────────────┘       │
+│                                                              │
+│  Chunk Size: 100 | Skip Limit: 100                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 정산 계산 공식
+
+```
+순매출액 = 총매출 - 환불액
+수수료 = 순매출액 × 수수료율
+부가세 = 수수료 × 10%
+정산액 = 순매출액 - 수수료 - 부가세 + 조정액
+```
+
+### 멱등성 보장
+
+1. SettlementProcessor에서 중복 정산 체크
+2. DB 유니크 제약조건 (seller_id + cycle_type + period_start + period_end)
+3. Spring Batch Job Instance (targetDate 기반)
+
+## 데이터베이스 스키마
 
 | 테이블 | 설명 |
 |--------|------|
@@ -94,76 +138,38 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
 | settlement_items | 정산 항목 상세 |
 | settlement_job_executions | 배치 실행 이력 |
 
-## 핵심 학습 내용
+## 테스트
 
-### 1. 배치 처리
-- Spring Batch의 청크(Chunk) 기반 처리
-- 대용량 데이터를 안정적으로 처리하는 기법
-- 실패 처리 및 재시도 정책
+```bash
+./gradlew test
+```
 
-### 2. 금융 시스템 구현
-- BigDecimal을 활용한 정밀한 금액 계산
-- 멱등성을 위한 데이터베이스 설계
-- 트랜잭션 관리 및 데이터 정합성
+### 테스트 현황
 
-### 3. 현대적인 개발 방식
-- Docker를 이용한 개발 환경 구축
-- Flyway를 이용한 데이터베이스 버전 관리
-- JUnit 5 단위 테스트 및 경계값 검증
+- 단위 테스트 33개+
+- CommissionCalculator: 수수료/부가세 계산 검증 (17개)
+- Controller: MockMvc 기반 API 테스트 (13개)
+- Repository: 쿼리 메서드 검증
 
 ## 개발 환경
 
-- **IDE**: IntelliJ IDEA
-- **JDK**: Amazon Corretto 21
-- **Build Tool**: Gradle 8.x
-- **Database**: MySQL 8.0 (Docker)
-- **Cache**: Redis (Docker)
+| 항목 | 버전 |
+|------|------|
+| IDE | IntelliJ IDEA |
+| JDK | Amazon Corretto 21 |
+| Build | Gradle 8.x |
+| Database | MySQL 8.0 (Docker) |
 
 ## 개발 일지
 
-- [2025-12-08] 프로젝트 기본 구축 완료
-  - Spring Boot 프로젝트 설정
-  - Docker 개발 환경 구성
-  - 데이터베이스 스키마 설계 및 구현
+- 2025-12-08: 프로젝트 초기 설정 및 DB 스키마 구현
+- 2025-12-09: 도메인 계층 구현 (9개 엔티티, 8개 Repository)
+- 2025-12-11: Spring Batch Job 구현 (Reader/Processor/Writer)
+- 2025-12-12: API 및 스케줄러 구현, 코드 리뷰 기반 리팩터링
 
-- [2025-12-09] 도메인 계층 구현 완료
-  - 도메인 Entity 클래스 8개 구현 (Seller, Order, OrderItem, Payment, Refund, Settlement, SettlementItem, SettlementJobExecution)
-  - Spring Data JPA Repository 인터페이스 8개 구현
-  - QueryDSL Q클래스 자동 생성
-  - Jakarta Persistence API 마이그레이션 (Spring Boot 3.x)
-  - 테스트 환경 개선 (H2 → MySQL)
-  - 복잡한 비즈니스 조회 로직 JPQL로 구현
-  - 멱등성 보장을 위한 Pessimistic Lock 적용
+## 문서
 
-- [2025-12-11] Spring Batch Job 구현 완료
-  - Spring Batch 5.x 기반 일일 정산 배치 시스템 구현
-  - BatchConfig, DailySettlementJobConfig (Job/Step 정의)
-  - SellerItemReader (@StepScope 기반 판매자 조회)
-  - SettlementProcessor (정산 계산 핵심 로직)
-    - 멱등성 체크, 수수료/부가세/정산액 계산
-  - SettlementWriter (배치 저장)
-  - JobExecutionListener, SettlementItemSkipListener
-  - Fault Tolerant 설정 (skipLimit으로 판매자별 독립 처리)
-  - OrderRepository에 Fetch Join 쿼리 추가 (N+1 해결)
-
-- [2025-12-12] 스케줄러, API, 테스트 데이터 구현 완료
-  - SettlementScheduler: 매일 02:00 KST 자동 실행 (@ConditionalOnProperty)
-  - 정산 조회 API 구현
-    - SettlementController (판매자용), AdminSettlementController (관리자용)
-    - Service 계층 인터페이스/구현체 분리 (3쌍)
-    - DTO record 패턴 활용 (Request 1개, Response 7개)
-  - 예외 처리 및 GlobalExceptionHandler (RFC 7807 ProblemDetail)
-  - SettlementRepository Fetch Join 쿼리 6개 추가
-  - V2__Insert_test_data.sql 테스트 데이터 (판매자 3명, 주문 18건, 환불 4건)
-
-- [2025-12-12] 코드 리뷰 기반 리팩터링 완료
-  - **Critical 수정**
-    - SettlementRepository 쿼리 필드명 오류 수정 (Entity 필드명과 일치)
-    - RefundRepository Fetch Join 추가 (N+1 문제 해결)
-  - **High 수정**
-    - SellerItemReader → JpaPagingItemReader 변경 (대용량 처리 최적화)
-    - SettlementWriter flush/clear 순서 수정 (LazyInitializationException 방지)
-  - **Medium 수정**
-    - CommissionCalculator 서비스 추출 (수수료 계산 로직 단일 책임)
-    - SettlementProcessor에서 CommissionCalculator 사용하도록 리팩터링
-    - 배치 재시작 정책 개선 (preventRestart 제거, allowStartIfComplete 추가)
+- [PRD (제품 요구사항)](./docs/PRD_제품요구사항문서.md)
+- [도메인 정의서](./docs/도메인%20정의서.md)
+- [ERD 및 테이블 설계](./docs/ERD%20및%20테이블%20설계.md)
+- [개발 워크플로우](./WORKFLOW.md)

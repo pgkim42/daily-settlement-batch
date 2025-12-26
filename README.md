@@ -20,7 +20,7 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
 - **Backend**: Java 21, Spring Boot 3.5, Spring Batch 5
 - **Database**: MySQL 8.0 (Flyway 마이그레이션)
 - **Build**: Gradle 8
-- **Test**: JUnit 5, Testcontainers, AssertJ
+- **Test**: JUnit 5, AssertJ
 - **Infrastructure**: Docker, Docker Compose
 
 ## 🔄 개발 프로세스
@@ -109,7 +109,7 @@ Spring Boot 기반의 마켓플레이스 판매자 일일 정산 시스템
 ### 3. 현대적인 개발 방식
 - Docker를 이용한 개발 환경 구축
 - Flyway를 이용한 데이터베이스 버전 관리
-- Testcontainers를 이용한 통합 테스트
+- JUnit 5 단위 테스트 및 경계값 검증
 
 ## 개발 환경
 

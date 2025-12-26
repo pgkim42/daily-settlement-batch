@@ -29,6 +29,9 @@ bin/
 # VS Code
 .vscode/
 
+# Serena
+.serena/
+
 # Mac
 .DS_Store
 

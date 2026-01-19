@@ -1,0 +1,357 @@
+package com.company.settlement.batch.job;
+
+import com.company.settlement.batch.AbstractBatchTest;
+import com.company.settlement.domain.entity.*;
+import com.company.settlement.domain.enums.*;
+import com.company.settlement.repository.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.springframework.batch.core.*;
+import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.test.JobLauncherTestUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * DailySettlementJob 통합 테스트
+ *
+ * 검증 항목:
+ * - 전체 Job 실행 흐름
+ * - 정상 실행 완료
+ * - 다중 판매자 처리
+ * - 멱등성 검증 (중복 실행 방지)
+ * - 트랜잭션 롤백
+ *
+ * 참고: @Transactional은 각 테스트 후 롤백을 위해 사용됩니다.
+ *
+ * 주의: Docker Desktop이 실행 중인지 확인 후 @Disabled를 제거하고 실행하세요.
+ */
+@Disabled("Docker Desktop이 필요합니다. Testcontainers로 MySQL 컨테이너를 실행합니다.")
+@SpringBootTest
+class DailySettlementJobIntegrationTest extends AbstractBatchTest {
+
+    @Autowired
+    private JobLauncher jobLauncher;
+
+    @Autowired
+    private Job dailySettlementJob;
+
+    @Autowired
+    private JobRepository jobRepository;
+
+    @Autowired
+    private SellerRepository sellerRepository;
+
+    @Autowired
+    private OrderRepository orderRepository;
+
+    @Autowired
+    private RefundRepository refundRepository;
+
+    @Autowired
+    private SettlementRepository settlementRepository;
+
+    @Autowired
+    private SettlementJobExecutionRepository jobExecutionRepository;
+
+    private JobLauncherTestUtils jobLauncherTestUtils;
+
+    private static final LocalDate TARGET_DATE = LocalDate.of(2025, 1, 15);
+
+    @BeforeEach
+    void setUp() {
+        jobLauncherTestUtils = new JobLauncherTestUtils();
+        jobLauncherTestUtils.setJobLauncher(jobLauncher);
+        jobLauncherTestUtils.setJobRepository(jobRepository);
+        jobLauncherTestUtils.setJob(dailySettlementJob);
+    }
+
+    @AfterEach
+    void tearDown() {
+        // 테스트 데이터 정리 (@Transactional로 자동 롤백되지만 명시적으로 확인)
+    }
+
+    @Nested
+    @DisplayName("정상 실행 흐름")
+    class NormalExecution {
+
+        @Test
+        @DisplayName("전체 Job이 정상적으로 완료되어야 한다")
+        @Transactional
+        void jobCompletesSuccessfully() throws Exception {
+            // Given
+            Seller seller = createTestSeller("SELLER001", "테스트판매자");
+            Order order = createTestOrder(seller, "ORD001", OrderStatus.CONFIRMED, new BigDecimal("10000"));
+            createTestOrderItem(order, "상품A", 1, new BigDecimal("10000"));
+
+            JobParameters jobParameters = new JobParametersBuilder()
+                .addString("targetDate", TARGET_DATE.toString())
+                .addLong("timestamp", System.currentTimeMillis()) // 유니크 파라미터
+                .toJobParameters();
+
+            // When
+            JobExecution jobExecution = jobLauncherTestUtils.launchJob(jobParameters);
+
+            // Then
+            assertThat(jobExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+
+            // Settlement 생성 확인
+            Settlement settlement = settlementRepository
+                .findBySellerIdAndCycleTypeAndPeriodStartAndPeriodEnd(
+                    seller.getId(), CycleType.DAILY, TARGET_DATE, TARGET_DATE
+                )
+                .orElse(null);
+
+            assertThat(settlement).isNotNull();
+            assertThat(settlement.getGrossSalesAmount()).isEqualByComparingTo("10000.00");
+            assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("다중 판매자를 모두 처리해야 한다")
+        @Transactional
+        void processMultipleSellers() throws Exception {
+            // Given
+            Seller seller1 = createTestSeller("SELLER001", "판매자1");
+            Seller seller2 = createTestSeller("SELLER002", "판매자2");
+            Seller seller3 = createTestSeller("SELLER003", "판매자3");
+
+            Order order1 = createTestOrder(seller1, "ORD001", OrderStatus.CONFIRMED, new BigDecimal("10000"));
+            createTestOrderItem(order1, "상품A", 1, new BigDecimal("10000"));
+
+            Order order2 = createTestOrder(seller2, "ORD002", OrderStatus.CONFIRMED, new BigDecimal("20000"));
+            createTestOrderItem(order2, "상품B", 2, new BigDecimal("10000"));
+
+            Order order3 = createTestOrder(seller3, "ORD003", OrderStatus.CONFIRMED, new BigDecimal("30000"));
+            createTestOrderItem(order3, "상품C", 3, new BigDecimal("10000"));
+
+            JobParameters jobParameters = new JobParametersBuilder()
+                .addString("targetDate", TARGET_DATE.toString())
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+
+            // When
+            JobExecution jobExecution = jobLauncherTestUtils.launchJob(jobParameters);
+
+            // Then
+            assertThat(jobExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+
+            // 3개 Settlement 생성 확인
+            assertThat(settlementRepository.findAll()).hasSize(3);
+        }
+    }
+
+    @Nested
+    @DisplayName("멱등성 검증")
+    class IdempotencyTests {
+
+        @Test
+        @DisplayName("이미 정산이 존재하는 경우 스킵되어야 한다")
+        @Transactional
+        void skipExistingSettlement() throws Exception {
+            // Given
+            Seller seller = createTestSeller("SELLER001", "테스트판매자");
+            Order order = createTestOrder(seller, "ORD001", OrderStatus.CONFIRMED, new BigDecimal("10000"));
+            createTestOrderItem(order, "상품A", 1, new BigDecimal("10000"));
+
+            // 첫 번째 실행
+            JobParameters jobParameters1 = new JobParametersBuilder()
+                .addString("targetDate", TARGET_DATE.toString())
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+
+            JobExecution firstExecution = jobLauncherTestUtils.launchJob(jobParameters1);
+            assertThat(firstExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+
+            Settlement firstSettlement = settlementRepository
+                .findBySellerIdAndCycleTypeAndPeriodStartAndPeriodEnd(
+                    seller.getId(), CycleType.DAILY, TARGET_DATE, TARGET_DATE
+                )
+                .orElseThrow();
+
+            // 두 번째 실행 (동일 날짜)
+            JobParameters jobParameters2 = new JobParametersBuilder()
+                .addString("targetDate", TARGET_DATE.toString())
+                .addLong("timestamp", System.currentTimeMillis() + 1000)
+                .toJobParameters();
+
+            // When
+            JobExecution secondExecution = jobLauncherTestUtils.launchJob(jobParameters2);
+
+            // Then
+            assertThat(secondExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+
+            // Settlement는 1개만 존재해야 함 (중복 생성 방지)
+            assertThat(settlementRepository.findAll()).hasSize(1);
+
+            Settlement secondSettlement = settlementRepository
+                .findBySellerIdAndCycleTypeAndPeriodStartAndPeriodEnd(
+                    seller.getId(), CycleType.DAILY, TARGET_DATE, TARGET_DATE
+                )
+                .orElseThrow();
+
+            assertThat(secondSettlement.getId()).isEqualTo(firstSettlement.getId());
+        }
+    }
+
+    @Nested
+    @DisplayName("환불 포함 정산")
+    class RefundTests {
+
+        @Test
+        @DisplayName("전체 환불이 포함된 정산이 올바르게 계산되어야 한다")
+        @Transactional
+        void calculateWithFullRefund() throws Exception {
+            // Given
+            Seller seller = createTestSeller("SELLER001", "테스트판매자");
+            Order order = createTestOrder(seller, "ORD001", OrderStatus.CONFIRMED, new BigDecimal("10000"));
+            OrderItem orderItem = createTestOrderItem(order, "상품A", 1, new BigDecimal("10000"));
+
+            // 전체 환불 생성
+            Refund refund = createTestRefund(orderItem, RefundType.FULL, new BigDecimal("10000"), RefundStatus.COMPLETED);
+
+            JobParameters jobParameters = new JobParametersBuilder()
+                .addString("targetDate", TARGET_DATE.toString())
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+
+            // When
+            JobExecution jobExecution = jobLauncherTestUtils.launchJob(jobParameters);
+
+            // Then
+            assertThat(jobExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+
+            Settlement settlement = settlementRepository
+                .findBySellerIdAndCycleTypeAndPeriodStartAndPeriodEnd(
+                    seller.getId(), CycleType.DAILY, TARGET_DATE, TARGET_DATE
+                )
+                .orElseThrow();
+
+            // 전체 환불이므로 정산액은 0에 가까워야 함 (수수료/세금도 환불)
+            assertThat(settlement.getGrossSalesAmount()).isEqualByComparingTo("10000.00");
+            assertThat(settlement.getRefundAmount()).isEqualByComparingTo("10000.00");
+        }
+
+        @Test
+        @DisplayName("부분 환불이 포함된 정산이 올바르게 계산되어야 한다")
+        @Transactional
+        void calculateWithPartialRefund() throws Exception {
+            // Given
+            Seller seller = createTestSeller("SELLER001", "테스트판매자");
+            Order order = createTestOrder(seller, "ORD001", OrderStatus.CONFIRMED, new BigDecimal("20000"));
+            OrderItem orderItem = createTestOrderItem(order, "상품B", 2, new BigDecimal("10000"));
+
+            // 5000원 부분 환불
+            Refund refund = createTestRefund(orderItem, RefundType.PARTIAL_AMOUNT, new BigDecimal("5000"), RefundStatus.COMPLETED);
+
+            JobParameters jobParameters = new JobParametersBuilder()
+                .addString("targetDate", TARGET_DATE.toString())
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+
+            // When
+            JobExecution jobExecution = jobLauncherTestUtils.launchJob(jobParameters);
+
+            // Then
+            assertThat(jobExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+
+            Settlement settlement = settlementRepository
+                .findBySellerIdAndCycleTypeAndPeriodStartAndPeriodEnd(
+                    seller.getId(), CycleType.DAILY, TARGET_DATE, TARGET_DATE
+                )
+                .orElseThrow();
+
+            assertThat(settlement.getGrossSalesAmount()).isEqualByComparingTo("20000.00");
+            assertThat(settlement.getRefundAmount()).isEqualByComparingTo("5000.00");
+        }
+    }
+
+    @Nested
+    @DisplayName("정산 대상 없음")
+    class NoSettlementData {
+
+        @Test
+        @DisplayName("정산 대상 데이터가 없어도 Job이 완료되어야 한다")
+        @Transactional
+        void completeWithNoData() throws Exception {
+            // Given - 활성 판매자만 존재, 주문/환불 없음
+            Seller seller = createTestSeller("SELLER001", "테스트판매자");
+
+            JobParameters jobParameters = new JobParametersBuilder()
+                .addString("targetDate", TARGET_DATE.toString())
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+
+            // When
+            JobExecution jobExecution = jobLauncherTestUtils.launchJob(jobParameters);
+
+            // Then
+            assertThat(jobExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+
+            // Settlement는 생성되지 않음
+            assertThat(settlementRepository.findAll()).isEmpty();
+        }
+    }
+
+    // ==================== 테스트 데이터 생성 헬퍼 메서드 ====================
+
+    private Seller createTestSeller(String code, String name) {
+        Seller seller = Seller.builder()
+            .sellerCode(code)
+            .sellerName(name)
+            .commissionRate(new BigDecimal("0.1000"))
+            .status(SellerStatus.ACTIVE)
+            .build();
+        return sellerRepository.save(seller);
+    }
+
+    private Order createTestOrder(Seller seller, String orderNo, OrderStatus status, BigDecimal amount) {
+        Order order = Order.builder()
+            .orderNo(orderNo)
+            .seller(seller)
+            .orderStatus(status)
+            .orderDate(LocalDateTime.now())
+            .totalAmount(amount)
+            .shippingFee(BigDecimal.ZERO)
+            .build();
+        return orderRepository.save(order);
+    }
+
+    private OrderItem createTestOrderItem(Order order, String productName, int quantity, BigDecimal unitPrice) {
+        OrderItem item = OrderItem.builder()
+            .order(order)
+            .productName(productName)
+            .unitPrice(unitPrice)
+            .quantity(quantity)
+            .totalAmount(unitPrice.multiply(new BigDecimal(quantity)))
+            .build();
+        order.addOrderItem(item);
+        return item; // CascadeType.ALL로 자동 저장
+    }
+
+    private Refund createTestRefund(OrderItem orderItem, RefundType type, BigDecimal amount, RefundStatus status) {
+        Refund refund = Refund.builder()
+            .orderItem(orderItem)
+            .refundType(type)
+            .refundAmount(amount)
+            .refundQuantity(1)
+            .refundStatus(status)
+            .build();
+        if (status == RefundStatus.COMPLETED) {
+            refund.complete();
+        }
+        return refundRepository.save(refund);
+    }
+}
